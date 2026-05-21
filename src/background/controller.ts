@@ -1,11 +1,27 @@
+import {
+  extractInstagramComments,
+  extractInstagramLikers,
+  extractInstagramPublications,
+  profileFromPublication,
+} from "../providers/instagram/parser";
+import { publicationKey } from "../providers/shared/utils";
+import {
+  accountInfoFromUser,
+  accountInfoToTrackedProfile,
+  favoriterToEngagement,
+  processFavoritersPayload,
+  processUserTweetsPayload,
+} from "../providers/x/parser";
 import type {
-  AccountInfo,
   BackgroundStore,
   ExportJSON,
-  Favoriter,
-  TweetData,
+  SocialComment,
+  SocialEngagement,
+  SocialMetrics,
+  SocialProvider,
+  SocialPublication,
 } from "../shared/domain";
-import type { RuntimeMessage } from "../shared/messages";
+import type { CapturedPayloadMessage, RuntimeMessage } from "../shared/messages";
 
 type AnyRecord = Record<string, any>;
 
@@ -18,236 +34,489 @@ export function createStore(trackedHandle = ""): BackgroundStore {
   return {
     trackedHandle,
     endpoints: {},
-    tweets: {},
+    publications: {},
+    commentsByPublication: {},
+    engagementsByPublication: {},
+    instagramPublicationIdsByShortcode: {},
+    instagramVisiblePublications: [],
     communityReplies: {},
+    trackedProfiles: {},
+    nextCaptureOrder: 1,
+    pageSessionKey: "",
+    tweets: {},
     favoriters: {},
     accountInfo: null,
     lastUpdated: null,
   };
 }
 
-function getEndpointStore(store: BackgroundStore, name: string) {
-  if (!store.endpoints[name]) {
-    store.endpoints[name] = { payloads: [], count: 0, lastSeen: null };
+function getEndpointStore(store: BackgroundStore, provider: SocialProvider, endpoint: string) {
+  const key = `${provider}:${endpoint}`;
+  if (!store.endpoints[key]) {
+    store.endpoints[key] = { provider, endpoint, payloads: [], count: 0, lastSeen: null };
   }
-  return store.endpoints[name];
+  return store.endpoints[key];
 }
 
-function extractTweetData(result: AnyRecord | null | undefined): TweetData | null {
-  if (!result || result.__typename !== "Tweet") return null;
-  const legacy = result.legacy || {};
-  const authorResult = result.core?.user_results?.result;
-  const authorCore = authorResult?.core || {};
-  const authorLegacy = authorResult?.legacy || {};
-  const views = result.views || {};
+function normalizeCapture(request: RuntimeMessage): CapturedPayloadMessage | null {
+  if (request.action === "CAPTURED_PAYLOAD") return request;
+  if (request.action === "GRAPHQL_CAPTURED") {
+    return {
+      action: "CAPTURED_PAYLOAD",
+      provider: request.provider || "x",
+      endpoint: request.endpoint,
+      payload: request.payload,
+      timestamp: request.timestamp,
+      pageUrl: request.pageUrl,
+      url: request.url,
+    };
+  }
+  return null;
+}
 
-  const isRetweet = !!legacy.retweeted_status_result;
-  const isReply = !!legacy.in_reply_to_status_id_str;
-  const isQuote = legacy.is_quote_status && !!legacy.quoted_status_id_str && !isRetweet;
-
-  let type: TweetData["type"] = "original";
-  if (isRetweet) type = "retweet";
-  else if (isReply) type = "reply";
-  else if (isQuote) type = "quote";
-
-  const sourceMatch = String(result.source || "").match(/>([^<]+)</);
-
+function emptyMetrics(): SocialMetrics {
   return {
-    tweet_id: legacy.id_str || result.rest_id || "",
-    text: legacy.full_text || "",
-    created_at: legacy.created_at || "",
-    type,
-    lang: legacy.lang || "",
+    bookmark_count: 0,
+    comment_count: 0,
+    like_count: 0,
+    quote_count: 0,
+    reply_count: 0,
+    repost_count: 0,
+    retweet_count: 0,
+    save_count: 0,
+    view_count: 0,
+  };
+}
+
+function instagramPlaceholderPublication(
+  item: BackgroundStore["instagramVisiblePublications"][number],
+  visibleOrder: number,
+): SocialPublication {
+  const mediaType =
+    item.mediaType ||
+    (item.url.includes("/reel/") || item.url.includes("/reels/") ? "reel" : "unknown");
+  const metrics = emptyMetrics();
+  metrics.comment_count = item.metrics?.comment_count || 0;
+  metrics.reply_count = metrics.comment_count;
+  metrics.like_count = item.metrics?.like_count || 0;
+  return {
+    provider: "instagram",
+    publication_id: `shortcode:${item.shortcode}`,
+    shortcode: item.shortcode,
+    is_placeholder: true,
+    visible_order: visibleOrder,
+    visible_url: item.url,
+    text: item.text || "",
+    created_at: "",
+    type: mediaType,
+    raw_type: "visible-dom",
     author: {
-      screen_name: authorCore.screen_name || "",
-      name: authorCore.name || "",
-      rest_id: authorResult?.rest_id || "",
-      avatar_url: authorResult?.avatar?.image_url || "",
-      followers_count: authorLegacy.followers_count || 0,
-      is_blue_verified: authorResult?.is_blue_verified || false,
+      provider: "instagram",
+      provider_user_id: "",
+      username: item.author?.username || "",
+      name: item.author?.name || item.author?.username || "",
+      avatar_url: item.author?.avatar_url || "",
     },
-    metrics: {
-      favorite_count: legacy.favorite_count || 0,
-      retweet_count: legacy.retweet_count || 0,
-      reply_count: legacy.reply_count || 0,
-      quote_count: legacy.quote_count || 0,
-      bookmark_count: legacy.bookmark_count || 0,
-      view_count: Number.parseInt(views.count, 10) || 0,
-    },
-    hashtags: (legacy.entities?.hashtags || []).map((h: AnyRecord) => h.text),
-    user_mentions: (legacy.entities?.user_mentions || []).map((m: AnyRecord) => ({
-      screen_name: m.screen_name,
-      name: m.name,
-    })),
-    media_count: (legacy.extended_entities?.media || legacy.entities?.media || []).length,
-    urls: (legacy.entities?.urls || []).map((u: AnyRecord) => u.expanded_url || u.display_url),
-    source: sourceMatch ? sourceMatch[1] || "" : "",
-    in_reply_to_tweet_id: legacy.in_reply_to_status_id_str || null,
-    in_reply_to_screen_name: legacy.in_reply_to_screen_name || null,
-    quoted_tweet_id: legacy.quoted_status_id_str || null,
-    retweeted_tweet_id: isRetweet ? legacy.retweeted_status_result?.result?.rest_id || null : null,
+    metrics,
+    hashtags: [],
+    user_mentions: [],
+    media_count: 0,
+    urls: [],
+    source: "Instagram DOM",
+    url: item.url,
   };
 }
 
-function processUserTweetsPayload(store: BackgroundStore, payload: unknown) {
+function migratePublicationRelations(
+  store: BackgroundStore,
+  fromPublicationId: string,
+  toPublicationId: string,
+) {
+  if (fromPublicationId === toPublicationId) return;
+  const fromKey = publicationKey("instagram", fromPublicationId);
+  const toKey = publicationKey("instagram", toPublicationId);
+
+  if (store.commentsByPublication[fromKey]?.length) {
+    const existing = store.commentsByPublication[toKey] || [];
+    const existingIds = new Set(existing.map((comment) => comment.comment_id));
+    const migrated = store.commentsByPublication[fromKey].map((comment) => ({
+      ...comment,
+      publication_id: toPublicationId,
+    }));
+    store.commentsByPublication[toKey] = [
+      ...existing,
+      ...migrated.filter((comment) => !existingIds.has(comment.comment_id)),
+    ];
+    delete store.commentsByPublication[fromKey];
+  }
+
+  if (store.engagementsByPublication[fromKey]?.length) {
+    const existing = store.engagementsByPublication[toKey] || [];
+    const existingIds = new Set(existing.map((engagement) => engagement.engagement_id));
+    const migrated = store.engagementsByPublication[fromKey].map((engagement) => ({
+      ...engagement,
+      publication_id: toPublicationId,
+      engagement_id: engagement.engagement_id.replace(fromPublicationId, toPublicationId),
+    }));
+    store.engagementsByPublication[toKey] = [
+      ...existing,
+      ...migrated.filter((engagement) => !existingIds.has(engagement.engagement_id)),
+    ];
+    delete store.engagementsByPublication[fromKey];
+  }
+}
+
+function storePublication(store: BackgroundStore, publication: SocialPublication) {
+  let publicationToStore = publication;
+  let key = publicationKey(publication.provider, publication.publication_id);
+  let existing = store.publications[key];
+
+  if (publication.provider === "instagram" && publication.shortcode) {
+    const previousPublicationId = store.instagramPublicationIdsByShortcode[publication.shortcode];
+    if (previousPublicationId && previousPublicationId !== publication.publication_id) {
+      const previousKey = publicationKey("instagram", previousPublicationId);
+      const previous = store.publications[previousKey];
+      existing = previous && existing ? { ...previous, ...existing } : previous || existing;
+      delete store.publications[previousKey];
+      migratePublicationRelations(store, previousPublicationId, publication.publication_id);
+    }
+    store.instagramPublicationIdsByShortcode[publication.shortcode] = publication.publication_id;
+    key = publicationKey(publication.provider, publication.publication_id);
+    publicationToStore = {
+      ...publication,
+      visible_order: publication.visible_order ?? existing?.visible_order,
+      visible_url: publication.visible_url || existing?.visible_url,
+      capture_order: existing?.capture_order || publication.capture_order,
+      captured_at: existing?.captured_at || publication.captured_at,
+      is_placeholder: Boolean(publication.is_placeholder),
+    };
+  }
+
+  store.publications[key] = {
+    ...existing,
+    ...publicationToStore,
+    captured_at:
+      existing?.captured_at || publicationToStore.captured_at || new Date().toISOString(),
+    capture_order:
+      existing?.capture_order || publicationToStore.capture_order || store.nextCaptureOrder++,
+    capture_priority: Math.min(
+      existing?.capture_priority ?? Number.MAX_SAFE_INTEGER,
+      publicationToStore.capture_priority ?? 100,
+    ),
+  };
+}
+
+function sortPublications(publications: SocialPublication[]) {
+  return publications.sort((a, b) => {
+    const orderA = a.capture_order || Number.MAX_SAFE_INTEGER;
+    const orderB = b.capture_order || Number.MAX_SAFE_INTEGER;
+    const visibleA = a.visible_order ?? Number.MAX_SAFE_INTEGER;
+    const visibleB = b.visible_order ?? Number.MAX_SAFE_INTEGER;
+    if (visibleA !== visibleB) return visibleA - visibleB;
+    const priorityA = a.capture_priority ?? 100;
+    const priorityB = b.capture_priority ?? 100;
+    if (priorityA !== priorityB) return priorityA - priorityB;
+    if (orderA !== orderB) return orderA - orderB;
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  });
+}
+
+function storeComment(store: BackgroundStore, comment: SocialComment) {
+  const key = publicationKey(comment.provider, comment.publication_id);
+  const existing = store.commentsByPublication[key] || [];
+  if (!existing.some((item) => item.comment_id === comment.comment_id)) {
+    store.commentsByPublication[key] = [...existing, comment];
+  }
+}
+
+function storeEngagement(store: BackgroundStore, engagement: SocialEngagement) {
+  const key = publicationKey(engagement.provider, engagement.publication_id);
+  const existing = store.engagementsByPublication[key] || [];
+  if (!existing.some((item) => item.engagement_id === engagement.engagement_id)) {
+    store.engagementsByPublication[key] = [...existing, engagement];
+  }
+}
+
+function resolveInstagramPublicationId(store: BackgroundStore, publicationId: string) {
+  return store.instagramPublicationIdsByShortcode[publicationId] || publicationId;
+}
+
+function hasVisibleInstagramPublication(store: BackgroundStore, shortcode?: string) {
+  if (!shortcode) return false;
+  const publicationId = store.instagramPublicationIdsByShortcode[shortcode];
+  if (!publicationId) return false;
+  return Boolean(store.publications[publicationKey("instagram", publicationId)]?.visible_order);
+}
+
+function processXCapture(store: BackgroundStore, request: CapturedPayloadMessage) {
   const handle = store.trackedHandle.toLowerCase();
-  if (!handle) return;
 
-  const instructions =
-    (payload as AnyRecord)?.data?.user?.result?.timeline?.timeline?.instructions || [];
+  if (request.endpoint === "UserTweets") {
+    processUserTweetsPayload(
+      request.payload,
+      store.trackedHandle,
+      (tweet, publication, rawResult) => {
+        const authorHandle = tweet.author.screen_name.toLowerCase();
 
-  for (const instruction of instructions) {
-    if (instruction.type === "TimelinePinEntry" && instruction.entry) {
-      processEntry(store, instruction.entry, handle);
-    }
-    if (instruction.type === "TimelineAddEntries") {
-      for (const entry of instruction.entries || []) {
-        processEntry(store, entry, handle);
-      }
-    }
-  }
-}
-
-function processEntry(store: BackgroundStore, entry: AnyRecord, handle: string) {
-  const content = entry?.content;
-  if (!content) return;
-
-  if (content.__typename === "TimelineTimelineItem" && content.itemContent?.tweet_results?.result) {
-    processTweetResult(store, content.itemContent.tweet_results.result, handle);
-  }
-
-  if (content.__typename === "TimelineTimelineModule" && content.items) {
-    for (const item of content.items) {
-      const result = item?.item?.itemContent?.tweet_results?.result;
-      if (result) processTweetResult(store, result, handle);
-    }
-  }
-}
-
-function accountInfoFromUser(user: AnyRecord, fallbackTweet?: TweetData): AccountInfo {
-  const legacy = user.legacy || {};
-  return {
-    screen_name: user.core?.screen_name || fallbackTweet?.author.screen_name || "",
-    name: user.core?.name || fallbackTweet?.author.name || "",
-    rest_id: user.rest_id || fallbackTweet?.author.rest_id || "",
-    avatar_url: user.avatar?.image_url || fallbackTweet?.author.avatar_url || "",
-    followers_count: legacy.followers_count || fallbackTweet?.author.followers_count || 0,
-    friends_count: legacy.friends_count || 0,
-    statuses_count: legacy.statuses_count || 0,
-    description: legacy.description || "",
-    is_blue_verified: user.is_blue_verified || fallbackTweet?.author.is_blue_verified || false,
-  };
-}
-
-function processTweetResult(store: BackgroundStore, result: AnyRecord, handle: string) {
-  const tweet = extractTweetData(result);
-  if (!tweet) return;
-
-  const authorHandle = tweet.author.screen_name.toLowerCase();
-
-  if (authorHandle === handle) {
-    if (!store.accountInfo && tweet.author.rest_id) {
-      const authorResult = result.core?.user_results?.result;
-      store.accountInfo = accountInfoFromUser(authorResult || {}, tweet);
-    }
-
-    if (tweet.type === "retweet") {
-      const original = result.legacy?.retweeted_status_result?.result;
-      if (original) {
-        const origTweet = extractTweetData(original);
-        if (origTweet) {
-          tweet.retweeted_tweet = {
-            tweet_id: origTweet.tweet_id,
-            text: origTweet.text,
-            author: origTweet.author,
-            metrics: origTweet.metrics,
-          };
+        if (authorHandle === handle) {
+          if (!store.accountInfo && tweet.author.rest_id) {
+            const authorResult = rawResult.core?.user_results?.result;
+            store.accountInfo = accountInfoFromUser(authorResult || {}, tweet);
+            store.trackedProfiles.x = accountInfoToTrackedProfile(store.accountInfo);
+          }
+          store.tweets[tweet.tweet_id] = tweet;
+          storePublication(store, publication);
         }
-      }
-    }
 
-    store.tweets[tweet.tweet_id] = tweet;
+        if (tweet.in_reply_to_screen_name?.toLowerCase() === handle && authorHandle !== handle) {
+          store.communityReplies[tweet.tweet_id] = publication;
+          storePublication(store, publication);
+          storeEngagement(store, {
+            provider: "x",
+            publication_id: tweet.in_reply_to_tweet_id || tweet.tweet_id,
+            kind: "comment",
+            engagement_id: publicationKey(
+              "x",
+              `${tweet.in_reply_to_tweet_id || tweet.tweet_id}:reply:${tweet.tweet_id}`,
+            ),
+            actor: publication.author,
+            engaged_at: tweet.created_at,
+          });
+        }
+      },
+    );
   }
 
-  if (tweet.in_reply_to_screen_name?.toLowerCase() === handle && authorHandle !== handle) {
-    store.communityReplies[tweet.tweet_id] = tweet;
+  if (request.endpoint === "Favoriters") {
+    const users = processFavoritersPayload(request.payload);
+    const tweetIdMatch = (request.pageUrl || "").match(/status\/(\d+)/);
+    if (tweetIdMatch && users.length) {
+      const tweetId = tweetIdMatch[1] || "";
+      if (!store.favoriters[tweetId]) store.favoriters[tweetId] = [];
+      const existing = new Set(store.favoriters[tweetId].map((u) => u.rest_id));
+      const freshUsers = users.filter((u) => !existing.has(u.rest_id));
+      store.favoriters[tweetId].push(...freshUsers);
+      for (const user of freshUsers) {
+        storeEngagement(store, favoriterToEngagement(tweetId, user));
+      }
+    }
+  }
+
+  if (request.endpoint === "UserByScreenName") {
+    const user = (request.payload as AnyRecord)?.data?.user?.result;
+    if (
+      user &&
+      store.trackedHandle &&
+      user.core?.screen_name?.toLowerCase() === store.trackedHandle.toLowerCase()
+    ) {
+      store.accountInfo = accountInfoFromUser(user);
+      store.trackedProfiles.x = accountInfoToTrackedProfile(store.accountInfo);
+    }
   }
 }
 
-function processFavoritersPayload(payload: unknown): Favoriter[] {
-  const instructions =
-    (payload as AnyRecord)?.data?.favoriters_timeline?.timeline?.instructions || [];
-  const users: Favoriter[] = [];
-  for (const instruction of instructions) {
-    for (const entry of instruction?.entries || []) {
-      const content = entry?.content;
-      if (content?.__typename !== "TimelineTimelineItem") continue;
-      const result = content?.itemContent?.user_results?.result;
-      if (!result || result?.__typename !== "User") continue;
-      const core = result?.core || {};
-      const legacy = result?.legacy || {};
-      const rel = result?.relationship_perspectives || {};
-      users.push({
-        rest_id: result.rest_id || "",
-        screen_name: core.screen_name || "",
-        name: core.name || "",
-        followers_count: legacy.followers_count || 0,
-        is_blue_verified: result.is_blue_verified || false,
-        following: rel.following || false,
-        followed_by: rel.followed_by || false,
-      });
+function processInstagramCapture(store: BackgroundStore, request: CapturedPayloadMessage) {
+  const handle = store.trackedHandle.toLowerCase();
+  const publications = extractInstagramPublications(request.payload);
+  const pageShortcode = instagramShortcodeFromUrl(request.pageUrl);
+
+  for (const publication of publications) {
+    if (publication.shortcode && publication.shortcode === pageShortcode) {
+      publication.capture_priority = 0;
+    }
+    if (
+      !handle ||
+      publication.author.username.toLowerCase() === handle ||
+      hasVisibleInstagramPublication(store, publication.shortcode)
+    ) {
+      storePublication(store, publication);
+      if (publication.author.username.toLowerCase() === handle) {
+        store.trackedProfiles.instagram = profileFromPublication(publication);
+      }
     }
   }
-  return users;
+
+  for (const comment of extractInstagramComments(request.payload, request.pageUrl)) {
+    comment.publication_id = resolveInstagramPublicationId(store, comment.publication_id);
+    storeComment(store, comment);
+    storeEngagement(store, {
+      provider: "instagram",
+      publication_id: comment.publication_id,
+      kind: "comment",
+      engagement_id: publicationKey(
+        "instagram",
+        `${comment.publication_id}:comment:${comment.comment_id}`,
+      ),
+      actor: comment.author,
+      engaged_at: comment.created_at,
+    });
+  }
+
+  if (request.endpoint.includes("Liker") || request.endpoint.includes("LikedBy")) {
+    for (const engagement of extractInstagramLikers(request.payload, request.pageUrl)) {
+      engagement.publication_id = resolveInstagramPublicationId(store, engagement.publication_id);
+      engagement.engagement_id = publicationKey(
+        "instagram",
+        `${engagement.publication_id}:like:${engagement.actor.provider_user_id || engagement.actor.username}`,
+      );
+      storeEngagement(store, engagement);
+    }
+  }
+}
+
+function clearCapturedData(store: BackgroundStore) {
+  const trackedHandle = store.trackedHandle;
+  Object.assign(store, createStore(trackedHandle));
+}
+
+function instagramShortcodeFromUrl(pageUrl?: string) {
+  if (!pageUrl) return "";
+  return pageUrl.match(/\/(?:p|reel|reels)\/([^/?#]+)/)?.[1] || "";
+}
+
+function reprocessPayloads(store: BackgroundStore) {
+  const visiblePublications = [...store.instagramVisiblePublications];
+  const payloads = Object.values(store.endpoints).flatMap((endpoint) =>
+    endpoint.payloads.map((payload) => ({
+      action: "CAPTURED_PAYLOAD" as const,
+      provider: endpoint.provider,
+      endpoint: endpoint.endpoint,
+      payload,
+      timestamp: endpoint.lastSeen || new Date().toISOString(),
+    })),
+  );
+
+  store.publications = {};
+  store.commentsByPublication = {};
+  store.engagementsByPublication = {};
+  store.instagramPublicationIdsByShortcode = {};
+  store.instagramVisiblePublications = visiblePublications;
+  store.communityReplies = {};
+  store.tweets = {};
+  store.favoriters = {};
+  store.accountInfo = null;
+  store.trackedProfiles = {};
+  store.nextCaptureOrder = 1;
+  store.pageSessionKey = "";
+
+  visiblePublications.forEach((item, index) => {
+    storePublication(store, instagramPlaceholderPublication(item, index + 1));
+  });
+
+  for (const payload of payloads) {
+    if (payload.provider === "x") processXCapture(store, payload);
+    if (payload.provider === "instagram") processInstagramCapture(store, payload);
+  }
 }
 
 function buildExportJSON(store: BackgroundStore): ExportJSON {
+  const publications = sortPublications(Object.values(store.publications));
   const tweets = Object.values(store.tweets).sort(
     (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
   );
-
   const replies = Object.values(store.communityReplies).sort(
     (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
   );
 
-  const originalTweets = tweets.filter((t) => t.type === "original");
-  const totalLikes = originalTweets.reduce((s, t) => s + t.metrics.favorite_count, 0);
-  const totalViews = originalTweets.reduce((s, t) => s + t.metrics.view_count, 0);
-  const totalReplies = originalTweets.reduce((s, t) => s + t.metrics.reply_count, 0);
+  const allComments = Object.values(store.commentsByPublication).flat();
+  const allEngagements = Object.values(store.engagementsByPublication).flat();
+  const totalLikes = publications.reduce(
+    (sum, publication) => sum + publication.metrics.like_count,
+    0,
+  );
+  const totalViews = publications.reduce(
+    (sum, publication) => sum + publication.metrics.view_count,
+    0,
+  );
+  const uniqueEngagers = new Set(
+    allEngagements.map(
+      (engagement) => engagement.actor.provider_user_id || engagement.actor.username,
+    ),
+  );
 
-  const uniqueEngagers = new Set<string>();
-  replies.forEach((r) => {
-    uniqueEngagers.add(r.author.rest_id);
-  });
-  Object.values(store.favoriters)
-    .flat()
-    .forEach((u) => {
-      uniqueEngagers.add(u.rest_id);
-    });
+  const providerSummary = { instagram: emptyProviderSummary(), x: emptyProviderSummary() };
+  for (const provider of ["instagram", "x"] as const) {
+    const providerPublications = publications.filter(
+      (publication) => publication.provider === provider,
+    );
+    const providerComments = allComments.filter((comment) => comment.provider === provider);
+    const providerEngagements = allEngagements.filter(
+      (engagement) => engagement.provider === provider,
+    );
+    providerSummary[provider] = {
+      total_publications: providerPublications.length,
+      total_comments: providerComments.length,
+      total_engagements: providerEngagements.length,
+      total_likes: providerPublications.reduce(
+        (sum, publication) => sum + publication.metrics.like_count,
+        0,
+      ),
+      total_views: providerPublications.reduce(
+        (sum, publication) => sum + publication.metrics.view_count,
+        0,
+      ),
+      unique_engagers: new Set(
+        providerEngagements.map(
+          (engagement) => engagement.actor.provider_user_id || engagement.actor.username,
+        ),
+      ).size,
+    };
+  }
+
+  const originalTweets = tweets.filter((t) => t.type === "original");
+  const xTotalLikes = originalTweets.reduce((s, t) => s + t.metrics.favorite_count, 0);
+  const xTotalViews = originalTweets.reduce((s, t) => s + t.metrics.view_count, 0);
+  const xTotalReplies = originalTweets.reduce((s, t) => s + t.metrics.reply_count, 0);
+
+  const topByLikes = [...publications].sort(
+    (a, b) => b.metrics.like_count - a.metrics.like_count,
+  )[0];
+  const topByViews = [...publications].sort(
+    (a, b) => b.metrics.view_count - a.metrics.view_count,
+  )[0];
 
   return {
+    schema_version: 2,
+    tracked_profiles: {
+      instagram: store.trackedProfiles.instagram || { username: store.trackedHandle },
+      x: store.trackedProfiles.x || { username: store.trackedHandle },
+    },
     tracked_account: store.accountInfo || { screen_name: store.trackedHandle },
     exported_at: new Date().toISOString(),
+    publications,
+    comments_by_publication: store.commentsByPublication,
+    engagements_by_publication: store.engagementsByPublication,
+    raw_payloads: store.endpoints,
     tweets,
     community_replies: replies,
     favoriters_by_tweet: store.favoriters,
     summary: {
+      total_publications: publications.length,
+      total_comments: allComments.length,
+      total_engagements: allEngagements.length,
+      total_likes: totalLikes,
+      total_views: totalViews,
+      unique_engagers: uniqueEngagers.size,
+      providers: providerSummary,
+      top_publication_by_likes: topByLikes
+        ? publicationKey(topByLikes.provider, topByLikes.publication_id)
+        : null,
+      top_publication_by_views: topByViews
+        ? publicationKey(topByViews.provider, topByViews.publication_id)
+        : null,
       total_tweets: tweets.length,
       total_original: originalTweets.length,
       total_retweets: tweets.filter((t) => t.type === "retweet").length,
       total_quotes: tweets.filter((t) => t.type === "quote").length,
       total_replies_from_account: tweets.filter((t) => t.type === "reply").length,
       total_community_replies: replies.length,
-      total_likes: totalLikes,
-      total_views: totalViews,
-      total_reply_engagement: totalReplies,
+      total_reply_engagement: xTotalReplies,
       avg_likes_per_original: originalTweets.length
-        ? Math.round(totalLikes / originalTweets.length)
+        ? Math.round(xTotalLikes / originalTweets.length)
         : 0,
       avg_views_per_original: originalTweets.length
-        ? Math.round(totalViews / originalTweets.length)
+        ? Math.round(xTotalViews / originalTweets.length)
         : 0,
-      unique_engagers: uniqueEngagers.size,
       top_tweet_by_likes:
         [...originalTweets].sort((a, b) => b.metrics.favorite_count - a.metrics.favorite_count)[0]
           ?.tweet_id || null,
@@ -258,10 +527,29 @@ function buildExportJSON(store: BackgroundStore): ExportJSON {
   };
 }
 
+function emptyProviderSummary() {
+  return {
+    total_publications: 0,
+    total_comments: 0,
+    total_engagements: 0,
+    total_likes: 0,
+    total_views: 0,
+    unique_engagers: 0,
+  };
+}
+
 function endpointSummary(store: BackgroundStore) {
-  const summary: Record<string, { count: number; lastSeen: null | string }> = {};
+  const summary: Record<
+    string,
+    { count: number; endpoint: string; lastSeen: null | string; provider: SocialProvider }
+  > = {};
   for (const [name, ep] of Object.entries(store.endpoints)) {
-    summary[name] = { count: ep.count, lastSeen: ep.lastSeen };
+    summary[name] = {
+      provider: ep.provider,
+      endpoint: ep.endpoint,
+      count: ep.count,
+      lastSeen: ep.lastSeen,
+    };
   }
   return summary;
 }
@@ -271,41 +559,69 @@ export function handleRuntimeMessage(
   request: RuntimeMessage,
   context: MessageContext = {},
 ): unknown {
-  if (request.action === "GRAPHQL_CAPTURED") {
-    const ep = getEndpointStore(store, request.endpoint);
-    ep.payloads.push(request.payload);
+  if (request.action === "PAGE_SESSION_STARTED") {
+    if (store.pageSessionKey !== request.sessionKey) {
+      clearCapturedData(store);
+      store.pageSessionKey = request.sessionKey;
+      store.lastUpdated = new Date().toISOString();
+      context.log?.(`[Social Interceptor] nova sessão de página: ${request.pageUrl}`);
+    }
+    return { success: true };
+  }
+
+  if (request.action === "VISIBLE_PUBLICATIONS") {
+    const items: BackgroundStore["instagramVisiblePublications"] = request.items?.length
+      ? request.items
+      : request.shortcodes.map((shortcode) => ({
+          shortcode,
+          url: `https://www.instagram.com/p/${shortcode}/`,
+        }));
+
+    store.instagramVisiblePublications = items;
+    items.forEach((item, index) => {
+      const publicationId =
+        store.instagramPublicationIdsByShortcode[item.shortcode] || `shortcode:${item.shortcode}`;
+      const key = publicationKey("instagram", publicationId);
+      const publication = store.publications[key];
+      if (publication) {
+        publication.visible_order = index + 1;
+        publication.visible_url = item.url;
+        if (publication.is_placeholder) {
+          publication.text = publication.text || item.text || "";
+          publication.type =
+            publication.type === "unknown" && item.mediaType ? item.mediaType : publication.type;
+          publication.author = {
+            ...publication.author,
+            username: publication.author.username || item.author?.username || "",
+            name: publication.author.name || item.author?.name || item.author?.username || "",
+            avatar_url: publication.author.avatar_url || item.author?.avatar_url || "",
+          };
+          publication.metrics.comment_count ||= item.metrics?.comment_count || 0;
+          publication.metrics.reply_count = publication.metrics.comment_count;
+          publication.metrics.like_count ||= item.metrics?.like_count || 0;
+        }
+        if (!publication.url) publication.url = item.url;
+        return;
+      }
+      storePublication(store, instagramPlaceholderPublication(item, index + 1));
+    });
+    store.lastUpdated = new Date().toISOString();
+    return { success: true };
+  }
+
+  const capture = normalizeCapture(request);
+  if (capture) {
+    const ep = getEndpointStore(store, capture.provider, capture.endpoint);
+    ep.payloads.push(capture.payload);
     ep.count++;
-    ep.lastSeen = request.timestamp;
-    store.lastUpdated = request.timestamp;
+    ep.lastSeen = capture.timestamp;
+    store.lastUpdated = capture.timestamp;
 
-    if (request.endpoint === "UserTweets") {
-      processUserTweetsPayload(store, request.payload);
-    }
-
-    if (request.endpoint === "Favoriters") {
-      const users = processFavoritersPayload(request.payload);
-      const tweetIdMatch = (request.pageUrl || "").match(/status\/(\d+)/);
-      if (tweetIdMatch && users.length) {
-        const tweetId = tweetIdMatch[1] || "";
-        if (!store.favoriters[tweetId]) store.favoriters[tweetId] = [];
-        const existing = new Set(store.favoriters[tweetId].map((u) => u.rest_id));
-        store.favoriters[tweetId].push(...users.filter((u) => !existing.has(u.rest_id)));
-      }
-    }
-
-    if (request.endpoint === "UserByScreenName") {
-      const user = (request.payload as AnyRecord)?.data?.user?.result;
-      if (
-        user &&
-        store.trackedHandle &&
-        user.core?.screen_name?.toLowerCase() === store.trackedHandle.toLowerCase()
-      ) {
-        store.accountInfo = accountInfoFromUser(user);
-      }
-    }
+    if (capture.provider === "x") processXCapture(store, capture);
+    if (capture.provider === "instagram") processInstagramCapture(store, capture);
 
     context.log?.(
-      `[X Interceptor] ${request.endpoint} (tweets: ${Object.keys(store.tweets).length}, replies: ${Object.keys(store.communityReplies).length})`,
+      `[Social Interceptor] ${capture.provider}:${capture.endpoint} (publicações: ${Object.keys(store.publications).length})`,
     );
     return { success: true };
   }
@@ -313,29 +629,29 @@ export function handleRuntimeMessage(
   if (request.action === "SET_HANDLE") {
     store.trackedHandle = request.handle;
     context.persistHandle?.(request.handle);
-    store.tweets = {};
-    store.communityReplies = {};
-    store.favoriters = {};
-    store.accountInfo = null;
-    for (const ep of Object.values(store.endpoints)) {
-      for (const payload of ep.payloads) {
-        processUserTweetsPayload(store, payload);
-      }
-    }
-    return { success: true, tweetCount: Object.keys(store.tweets).length };
+    reprocessPayloads(store);
+    return {
+      success: true,
+      publicationCount: Object.keys(store.publications).length,
+      tweetCount: Object.keys(store.tweets).length,
+    };
   }
 
   if (request.action === "GET_HANDLE") {
     return { handle: store.trackedHandle };
   }
 
-  if (request.action === "GET_TWEETS") {
+  if (request.action === "GET_PUBLICATIONS" || request.action === "GET_TWEETS") {
     return {
+      publications: sortPublications(Object.values(store.publications)),
+      commentsCount: Object.values(store.commentsByPublication).flat().length,
+      engagementsCount: Object.values(store.engagementsByPublication).flat().length,
       tweets: Object.values(store.tweets).sort(
         (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
       ),
       replyCount: Object.keys(store.communityReplies).length,
       accountInfo: store.accountInfo,
+      trackedProfiles: store.trackedProfiles,
       lastUpdated: store.lastUpdated,
     };
   }
@@ -349,7 +665,9 @@ export function handleRuntimeMessage(
   }
 
   if (request.action === "GET_ENDPOINT_PAYLOADS") {
-    const ep = store.endpoints[request.endpoint];
+    const ep =
+      store.endpoints[request.endpoint] ||
+      Object.values(store.endpoints).find((endpoint) => endpoint.endpoint === request.endpoint);
     return { payloads: ep ? ep.payloads : [] };
   }
 
@@ -358,8 +676,7 @@ export function handleRuntimeMessage(
   }
 
   if (request.action === "CLEAR_ALL") {
-    const trackedHandle = store.trackedHandle;
-    Object.assign(store, createStore(trackedHandle));
+    clearCapturedData(store);
     return { success: true };
   }
 

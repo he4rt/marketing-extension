@@ -172,58 +172,83 @@ body {
   line-height: 1.4;
 }
 
-/* Tweet list */
-.tweet-list {
+/* Publication list */
+.publication-list {
   overflow-y: auto;
   max-height: 390px;
 }
 
-.tweet-card {
+.publication-card {
   padding: 10px 16px;
   border-bottom: 1px solid #2f3336;
   transition: background 0.15s;
   cursor: pointer;
 }
-.tweet-card:hover {
+.publication-card:hover {
   background: #080808;
 }
 
-.tweet-top {
+.publication-top {
   display: flex;
   align-items: center;
   gap: 6px;
   margin-bottom: 4px;
 }
-.tweet-type {
+.publication-type {
   font-size: 10px;
   font-weight: 700;
   padding: 1px 6px;
   border-radius: 4px;
   text-transform: uppercase;
 }
-.tweet-type-original {
+.publication-type-original {
   background: #1d3c50;
   color: #1d9bf0;
 }
-.tweet-type-retweet {
+.publication-type-retweet {
   background: #1a3a1a;
   color: #00ba7c;
 }
-.tweet-type-reply {
+.publication-type-reply {
   background: #3a2a1a;
   color: #f9a825;
 }
-.tweet-type-quote {
+.publication-type-quote {
   background: #2a1a3a;
   color: #b388ff;
 }
+.publication-type-image,
+.publication-type-video,
+.publication-type-carousel,
+.publication-type-reel {
+  background: #3a1f35;
+  color: #ff7ac8;
+}
+.publication-type-unknown {
+  background: #2f3336;
+  color: #c9cbcf;
+}
+.provider-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #132d25;
+  color: #00ba7c;
+  text-transform: uppercase;
+}
+.publication-author {
+  font-size: 11px;
+  color: #8b98a5;
+  margin-bottom: 4px;
+}
 
-.tweet-date {
+.publication-date {
   font-size: 11px;
   color: #71767b;
 }
 
-.tweet-text {
+.publication-text {
   font-size: 13px;
   color: #e7e9ea;
   line-height: 1.3;
@@ -234,13 +259,13 @@ body {
   margin-bottom: 6px;
 }
 
-.tweet-metrics {
+.publication-metrics {
   display: flex;
   gap: 14px;
   font-size: 11px;
   color: #71767b;
 }
-.tweet-metrics strong {
+.publication-metrics strong {
   color: #e7e9ea;
   font-weight: 600;
 }

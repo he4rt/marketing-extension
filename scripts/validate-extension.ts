@@ -78,10 +78,10 @@ async function validateManifest() {
     fail("background deve ser emitido como módulo MV3");
   }
 
-  assertIncludesAll(manifest.permissions, ["storage"], "permissions");
+  assertIncludesAll(manifest.permissions, ["storage", "unlimitedStorage"], "permissions");
   assertIncludesAll(
     manifest.host_permissions,
-    ["https://x.com/*", "https://twitter.com/*"],
+    ["https://x.com/*", "https://twitter.com/*", "https://www.instagram.com/*"],
     "host_permissions",
   );
 
@@ -103,7 +103,7 @@ async function validateManifest() {
   for (const script of [mainWorld, isolatedWorld]) {
     assertIncludesAll(
       script.matches,
-      ["https://x.com/*", "https://twitter.com/*"],
+      ["https://x.com/*", "https://twitter.com/*", "https://www.instagram.com/*"],
       `${script.js.join(",")} matches`,
     );
   }

@@ -3,6 +3,13 @@ import { createStore, handleRuntimeMessage } from "../src/background/controller"
 import type { BackgroundStore } from "../src/shared/domain";
 import type { RuntimeMessage } from "../src/shared/messages";
 import {
+  instagramCommentsPayload,
+  instagramFeedPayload,
+  instagramLikersPayload,
+  instagramPostPagePayload,
+  instagramSingleMediaPayload,
+} from "./fixtures/instagram-payloads";
+import {
   alternateUserTweetsPayload,
   favoritersPayload,
   userByScreenNamePayload,
@@ -36,9 +43,11 @@ function capture(
   payload: unknown,
   pageUrl: string,
   timestamp = "2026-05-20T12:00:00.000Z",
+  provider: "instagram" | "x" = "x",
 ) {
   return harness.sendMessage({
-    action: "GRAPHQL_CAPTURED",
+    action: "CAPTURED_PAYLOAD",
+    provider,
     endpoint,
     payload,
     timestamp,
@@ -205,27 +214,30 @@ describe("background controller", () => {
     };
     const exported = app.sendMessage({ action: "GET_EXPORT" }) as {
       community_replies: unknown[];
+      publications: unknown[];
       summary: Record<string, unknown>;
       tracked_account: { screen_name: string };
       tweets: unknown[];
     };
 
-    expect(Object.keys(endpoints.endpoints).sort()).toEqual(["Favoriters", "UserTweets"]);
-    expect(endpoints.endpoints.UserTweets?.count).toBe(1);
+    expect(Object.keys(endpoints.endpoints).sort()).toEqual(["x:Favoriters", "x:UserTweets"]);
+    expect(endpoints.endpoints["x:UserTweets"]?.count).toBe(1);
     expect(userTweetPayloads.payloads).toHaveLength(1);
-    expect(allRaw.endpoints.Favoriters?.count).toBe(1);
+    expect(allRaw.endpoints["x:Favoriters"]?.count).toBe(1);
 
     expect(exported.tracked_account.screen_name).toBe("He4rtDevs");
+    expect(exported.publications).toHaveLength(5);
     expect(exported.tweets).toHaveLength(4);
     expect(exported.community_replies).toHaveLength(1);
+    expect(exported.summary.total_publications).toBe(5);
     expect(exported.summary.total_tweets).toBe(4);
     expect(exported.summary.total_original).toBe(1);
     expect(exported.summary.total_retweets).toBe(1);
     expect(exported.summary.total_quotes).toBe(1);
     expect(exported.summary.total_replies_from_account).toBe(1);
     expect(exported.summary.total_community_replies).toBe(1);
-    expect(exported.summary.total_likes).toBe(15);
-    expect(exported.summary.total_views).toBe(1000);
+    expect(exported.summary.total_likes).toBe(23);
+    expect(exported.summary.total_views).toBe(1750);
     expect(exported.summary.total_reply_engagement).toBe(2);
     expect(exported.summary.avg_likes_per_original).toBe(15);
     expect(exported.summary.avg_views_per_original).toBe(1000);
@@ -260,5 +272,294 @@ describe("background controller", () => {
     expect(tweets.replyCount).toBe(0);
     expect(endpoints.endpoints).toEqual({});
     expect(handle).toEqual({ handle: "He4rtDevs" });
+  });
+
+  test("captura publicações, comentários e curtidas do Instagram em export genérico", () => {
+    const app = createHarness();
+
+    app.sendMessage({ action: "SET_HANDLE", handle: "he4rtdevs" });
+    capture(
+      app,
+      "InstagramFeedTimeline",
+      instagramFeedPayload,
+      "https://www.instagram.com/",
+      "2026-05-20T13:00:00.000Z",
+      "instagram",
+    );
+    capture(
+      app,
+      "InstagramMedia",
+      instagramSingleMediaPayload,
+      "https://www.instagram.com/p/CAR789/",
+      "2026-05-20T13:01:00.000Z",
+      "instagram",
+    );
+    capture(
+      app,
+      "InstagramComments",
+      instagramCommentsPayload,
+      "https://www.instagram.com/p/ABC123/",
+      "2026-05-20T13:02:00.000Z",
+      "instagram",
+    );
+    capture(
+      app,
+      "InstagramLikers",
+      instagramLikersPayload,
+      "https://www.instagram.com/p/ABC123/liked_by/",
+      "2026-05-20T13:03:00.000Z",
+      "instagram",
+    );
+
+    const response = app.sendMessage({ action: "GET_PUBLICATIONS" }) as {
+      commentsCount: number;
+      engagementsCount: number;
+      publications: Array<{
+        provider: string;
+        publication_id: string;
+        shortcode?: string;
+        type: string;
+      }>;
+    };
+    const exported = app.sendMessage({ action: "GET_EXPORT" }) as {
+      comments_by_publication: Record<string, unknown[]>;
+      engagements_by_publication: Record<string, unknown[]>;
+      publications: Array<{ provider: string; shortcode?: string; type: string }>;
+      summary: Record<string, any>;
+      tracked_profiles: Record<string, { username: string }>;
+    };
+
+    expect(response.publications).toHaveLength(3);
+    expect(response.publications.map((publication) => publication.shortcode).sort()).toEqual([
+      "ABC123",
+      "CAR789",
+      "REEL456",
+    ]);
+    expect(
+      response.publications.find((publication) => publication.shortcode === "REEL456")?.type,
+    ).toBe("reel");
+    expect(response.commentsCount).toBe(2);
+    expect(response.engagementsCount).toBe(4);
+
+    expect(exported.tracked_profiles.instagram?.username).toBe("he4rtdevs");
+    expect(exported.summary.providers.instagram.total_publications).toBe(3);
+    expect(exported.summary.providers.instagram.total_comments).toBe(2);
+    expect(exported.summary.providers.instagram.total_engagements).toBe(4);
+    expect(exported.comments_by_publication["instagram:391"]).toHaveLength(2);
+    expect(exported.engagements_by_publication["instagram:391"]).toHaveLength(4);
+  });
+
+  test("captura publicação principal renderizada por SSR e vincula comentários pelo shortcode", () => {
+    const app = createHarness();
+
+    app.sendMessage({ action: "SET_HANDLE", handle: "he4rtdevs" });
+    capture(
+      app,
+      "InstagramPageSSR",
+      instagramPostPagePayload,
+      "https://www.instagram.com/p/POSTSSR/",
+      "2026-05-20T14:00:00.000Z",
+      "instagram",
+    );
+    capture(
+      app,
+      "InstagramComments",
+      instagramCommentsPayload,
+      "https://www.instagram.com/p/POSTSSR/",
+      "2026-05-20T14:01:00.000Z",
+      "instagram",
+    );
+
+    const exported = app.sendMessage({ action: "GET_EXPORT" }) as {
+      comments_by_publication: Record<string, unknown[]>;
+      publications: Array<{ publication_id: string; shortcode?: string }>;
+    };
+
+    expect(
+      exported.publications.find((publication) => publication.shortcode === "POSTSSR")
+        ?.publication_id,
+    ).toBe("394");
+    expect(exported.comments_by_publication["instagram:394"]).toHaveLength(2);
+  });
+
+  test("preserva ordem de captura das publicações para refletir o scroll", () => {
+    const app = createHarness();
+
+    app.sendMessage({ action: "SET_HANDLE", handle: "he4rtdevs" });
+    capture(
+      app,
+      "InstagramPageSSR",
+      instagramPostPagePayload,
+      "https://www.instagram.com/p/POSTSSR/",
+      "2026-05-20T15:00:00.000Z",
+      "instagram",
+    );
+    capture(
+      app,
+      "InstagramFeedTimeline",
+      instagramFeedPayload,
+      "https://www.instagram.com/p/POSTSSR/",
+      "2026-05-20T15:01:00.000Z",
+      "instagram",
+    );
+
+    const response = app.sendMessage({ action: "GET_PUBLICATIONS" }) as {
+      publications: Array<{ capture_order?: number; shortcode?: string }>;
+    };
+
+    expect(response.publications.map((publication) => publication.shortcode)).toEqual([
+      "POSTSSR",
+      "ABC123",
+      "REEL456",
+    ]);
+    expect(response.publications.map((publication) => publication.capture_order)).toEqual([
+      1, 2, 3,
+    ]);
+  });
+
+  test("usa a ordem visível do Instagram quando o DOM informa shortcodes em outra ordem", () => {
+    const app = createHarness();
+
+    app.sendMessage({ action: "SET_HANDLE", handle: "he4rtdevs" });
+    capture(
+      app,
+      "InstagramFeedTimeline",
+      instagramFeedPayload,
+      "https://www.instagram.com/",
+      "2026-05-20T15:30:00.000Z",
+      "instagram",
+    );
+    app.sendMessage({
+      action: "VISIBLE_PUBLICATIONS",
+      provider: "instagram",
+      pageUrl: "https://www.instagram.com/",
+      shortcodes: ["REEL456", "ABC123"],
+    });
+
+    const response = app.sendMessage({ action: "GET_PUBLICATIONS" }) as {
+      publications: Array<{ shortcode?: string; visible_order?: number }>;
+    };
+
+    expect(response.publications.map((publication) => publication.shortcode)).toEqual([
+      "REEL456",
+      "ABC123",
+    ]);
+    expect(response.publications.map((publication) => publication.visible_order)).toEqual([1, 2]);
+  });
+
+  test("cria publicações visíveis do Instagram antes do payload e depois enriquece pelo shortcode", () => {
+    const app = createHarness();
+
+    app.sendMessage({ action: "SET_HANDLE", handle: "outro_usuario" });
+    app.sendMessage({
+      action: "VISIBLE_PUBLICATIONS",
+      provider: "instagram",
+      pageUrl: "https://www.instagram.com/",
+      shortcodes: ["REEL456", "ABC123"],
+      items: [
+        {
+          mediaType: "reel",
+          shortcode: "REEL456",
+          text: "Reel visível no DOM",
+          url: "https://www.instagram.com/reel/REEL456/",
+        },
+        {
+          mediaType: "image",
+          shortcode: "ABC123",
+          text: "Imagem visível no DOM",
+          url: "https://www.instagram.com/p/ABC123/",
+        },
+      ],
+    });
+
+    const visibleOnly = app.sendMessage({ action: "GET_PUBLICATIONS" }) as {
+      publications: Array<{
+        is_placeholder?: boolean;
+        publication_id: string;
+        shortcode?: string;
+        text: string;
+        type: string;
+        visible_order?: number;
+      }>;
+    };
+
+    expect(visibleOnly.publications.map((publication) => publication.shortcode)).toEqual([
+      "REEL456",
+      "ABC123",
+    ]);
+    expect(visibleOnly.publications.every((publication) => publication.is_placeholder)).toBe(true);
+    expect(visibleOnly.publications.map((publication) => publication.type)).toEqual([
+      "reel",
+      "image",
+    ]);
+    expect(visibleOnly.publications.map((publication) => publication.text)).toEqual([
+      "Reel visível no DOM",
+      "Imagem visível no DOM",
+    ]);
+
+    capture(
+      app,
+      "InstagramFeedTimeline",
+      instagramFeedPayload,
+      "https://www.instagram.com/",
+      "2026-05-20T15:40:00.000Z",
+      "instagram",
+    );
+
+    const enriched = app.sendMessage({ action: "GET_PUBLICATIONS" }) as {
+      publications: Array<{
+        is_placeholder?: boolean;
+        publication_id: string;
+        shortcode?: string;
+        text: string;
+        visible_order?: number;
+      }>;
+    };
+
+    expect(enriched.publications.map((publication) => publication.shortcode)).toEqual([
+      "REEL456",
+      "ABC123",
+    ]);
+    expect(enriched.publications.map((publication) => publication.publication_id)).toEqual([
+      "392",
+      "391",
+    ]);
+    expect(enriched.publications.map((publication) => publication.visible_order)).toEqual([1, 2]);
+    expect(enriched.publications.every((publication) => !publication.is_placeholder)).toBe(true);
+    expect(enriched.publications[1]?.text).toContain("Laravel");
+  });
+
+  test("limpa dados capturados ao iniciar nova sessão de página sem apagar handle", () => {
+    const app = createHarness();
+
+    app.sendMessage({ action: "SET_HANDLE", handle: "he4rtdevs" });
+    capture(
+      app,
+      "InstagramFeedTimeline",
+      instagramFeedPayload,
+      "https://www.instagram.com/",
+      "2026-05-20T16:00:00.000Z",
+      "instagram",
+    );
+
+    expect(
+      (app.sendMessage({ action: "GET_PUBLICATIONS" }) as { publications: unknown[] }).publications,
+    ).toHaveLength(2);
+
+    app.sendMessage({
+      action: "PAGE_SESSION_STARTED",
+      provider: "instagram",
+      pageUrl: "https://www.instagram.com/p/NEWPAGE/",
+      sessionKey: "session-2",
+    });
+
+    expect(app.sendMessage({ action: "GET_HANDLE" })).toEqual({ handle: "he4rtdevs" });
+    expect(
+      (app.sendMessage({ action: "GET_PUBLICATIONS" }) as { publications: unknown[] }).publications,
+    ).toHaveLength(0);
+    expect(
+      (app.sendMessage({ action: "GET_ENDPOINTS" }) as { endpoints: Record<string, unknown> })
+        .endpoints,
+    ).toEqual({});
   });
 });

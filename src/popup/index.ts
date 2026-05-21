@@ -1,12 +1,13 @@
-import type { EndpointStore, ExportJSON, TweetData } from "../shared/domain";
+import type { EndpointStore, ExportJSON, SocialPublication } from "../shared/domain";
 
-type TweetsResponse = {
-  replyCount?: number;
-  tweets?: TweetData[];
+type PublicationsResponse = {
+  commentsCount?: number;
+  engagementsCount?: number;
+  publications?: SocialPublication[];
 };
 
 type EndpointsResponse = {
-  endpoints?: Record<string, Pick<EndpointStore, "count" | "lastSeen">>;
+  endpoints?: Record<string, Pick<EndpointStore, "count" | "endpoint" | "lastSeen" | "provider">>;
 };
 
 type EndpointPayloadsResponse = {
@@ -19,12 +20,12 @@ type AllRawResponse = {
 
 const handleInput = getElement<HTMLInputElement>("handleInput");
 const setHandleBtn = getElement<HTMLButtonElement>("setHandleBtn");
-const tweetCountEl = getElement<HTMLElement>("tweetCount");
-const replyCountEl = getElement<HTMLElement>("replyCount");
+const publicationCountEl = getElement<HTMLElement>("publicationCount");
+const interactionCountEl = getElement<HTMLElement>("interactionCount");
 const exportBtn = getElement<HTMLButtonElement>("exportBtn");
 const clearBtn = getElement<HTMLButtonElement>("clearBtn");
-const emptyTweets = getElement<HTMLElement>("emptyTweets");
-const tweetList = getElement<HTMLElement>("tweetList");
+const emptyPublications = getElement<HTMLElement>("emptyPublications");
+const publicationList = getElement<HTMLElement>("publicationList");
 const endpointCountEl = getElement<HTMLElement>("endpointCount");
 const copyAllBtn = getElement<HTMLButtonElement>("copyAllBtn");
 const emptyEndpoints = getElement<HTMLElement>("emptyEndpoints");
@@ -34,7 +35,7 @@ document.addEventListener("DOMContentLoaded", () => {
   chrome.runtime.sendMessage({ action: "GET_HANDLE" }, (r: { handle?: string }) => {
     if (r?.handle) handleInput.value = r.handle;
   });
-  loadTweets();
+  loadPublications();
   loadEndpoints();
 
   document.querySelectorAll<HTMLButtonElement>(".tab").forEach((tab) => {
@@ -54,9 +55,24 @@ document.addEventListener("DOMContentLoaded", () => {
   handleInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") setHandle();
   });
+  handleInput.addEventListener("change", () => {
+    if (!handleInput.value.trim()) setHandle();
+  });
   exportBtn.addEventListener("click", handleExport);
   clearBtn.addEventListener("click", handleClear);
   copyAllBtn.addEventListener("click", handleCopyAll);
+
+  chrome.runtime.onMessage.addListener((message: { action?: string }) => {
+    if (message.action === "STORE_UPDATED") {
+      loadPublications();
+      loadEndpoints();
+    }
+  });
+
+  window.setInterval(() => {
+    loadPublications();
+    loadEndpoints();
+  }, 2000);
 });
 
 function getElement<T extends HTMLElement = HTMLElement>(id: string): T {
@@ -67,66 +83,76 @@ function getElement<T extends HTMLElement = HTMLElement>(id: string): T {
 
 function setHandle() {
   const handle = handleInput.value.trim().replace(/^@/, "");
-  if (!handle) return;
   handleInput.value = handle;
   chrome.runtime.sendMessage({ action: "SET_HANDLE", handle }, () => {
-    loadTweets();
+    loadPublications();
+    loadEndpoints();
   });
 }
 
-function loadTweets() {
-  chrome.runtime.sendMessage({ action: "GET_TWEETS" }, (r: TweetsResponse | undefined) => {
-    if (!r) return;
-    renderTweets(r.tweets || [], r.replyCount || 0);
-  });
+function loadPublications() {
+  chrome.runtime.sendMessage(
+    { action: "GET_PUBLICATIONS" },
+    (r: PublicationsResponse | undefined) => {
+      if (!r) return;
+      renderPublications(r.publications || [], (r.commentsCount || 0) + (r.engagementsCount || 0));
+    },
+  );
 }
 
-function renderTweets(tweets: TweetData[], replyCount: number) {
-  tweetCountEl.textContent = `${tweets.length} tweet${tweets.length !== 1 ? "s" : ""}`;
-  replyCountEl.textContent = `${replyCount} community replies`;
-  const hasData = tweets.length > 0;
+function renderPublications(publications: SocialPublication[], interactions: number) {
+  publicationCountEl.textContent = `${publications.length} ${plural(publications.length, "publicação", "publicações")}`;
+  interactionCountEl.textContent = `${interactions} ${plural(interactions, "interação", "interações")}`;
+  const hasData = publications.length > 0;
   exportBtn.disabled = !hasData;
   clearBtn.disabled = !hasData;
 
   if (!hasData) {
-    emptyTweets.classList.remove("hidden");
-    tweetList.classList.add("hidden");
+    emptyPublications.classList.remove("hidden");
+    publicationList.classList.add("hidden");
     return;
   }
 
-  emptyTweets.classList.add("hidden");
-  tweetList.classList.remove("hidden");
-  tweetList.innerHTML = "";
+  emptyPublications.classList.add("hidden");
+  publicationList.classList.remove("hidden");
+  publicationList.innerHTML = "";
 
-  for (const t of tweets) {
+  for (const publication of publications) {
     const card = document.createElement("div");
-    card.className = "tweet-card";
+    card.className = "publication-card";
 
-    const typeClass = `tweet-type-${t.type}`;
-    const date = t.created_at ? formatDate(t.created_at) : "";
-    const text = t.type === "retweet" ? `RT: ${t.retweeted_tweet?.text || t.text}` : t.text;
-    const m = t.metrics;
+    const providerLabel = publication.provider === "instagram" ? "Instagram" : "X";
+    const typeClass = `publication-type-${publication.type}`;
+    const date = publication.created_at ? formatDate(publication.created_at) : "";
+    const metrics = publication.metrics;
+    const author = publication.author.username
+      ? `@${publication.author.username}`
+      : "Publicação visível";
+    const text =
+      publication.text ||
+      (publication.is_placeholder ? "Dados básicos capturados pelo DOM" : "(sem legenda)");
 
     card.innerHTML = `
-      <div class="tweet-top">
-        <span class="tweet-type ${typeClass}">${t.type}</span>
-        <span class="tweet-date">${date}</span>
+      <div class="publication-top">
+        <span class="provider-badge">${providerLabel}</span>
+        <span class="publication-type ${typeClass}">${labelType(publication.type)}</span>
+        <span class="publication-date">${date}</span>
       </div>
-      <div class="tweet-text">${escapeHtml(text)}</div>
-      <div class="tweet-metrics">
-        <span><strong${m.favorite_count > 10 ? ' class="metric-highlight"' : ""}>${fmt(m.favorite_count)}</strong> likes</span>
-        <span><strong>${fmt(m.retweet_count)}</strong> RTs</span>
-        <span><strong>${fmt(m.reply_count)}</strong> replies</span>
-        <span><strong>${fmt(m.view_count)}</strong> views</span>
+      <div class="publication-author">${escapeHtml(author)}</div>
+      <div class="publication-text">${escapeHtml(text)}</div>
+      <div class="publication-metrics">
+        <span><strong${metrics.like_count > 10 ? ' class="metric-highlight"' : ""}>${fmt(metrics.like_count)}</strong> curtidas</span>
+        <span><strong>${fmt(metrics.comment_count)}</strong> comentários</span>
+        <span><strong>${fmt(metrics.repost_count)}</strong> reposts</span>
+        <span><strong>${fmt(metrics.view_count)}</strong> views</span>
       </div>
     `;
 
     card.addEventListener("click", () => {
-      const author = t.author.screen_name;
-      chrome.tabs.create({ url: `https://x.com/${author}/status/${t.tweet_id}` });
+      if (publication.url) chrome.tabs.create({ url: publication.url });
     });
 
-    tweetList.appendChild(card);
+    publicationList.appendChild(card);
   }
 }
 
@@ -137,9 +163,13 @@ function handleExport() {
     const blob = new Blob([json], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    const handle = data.tracked_account?.screen_name || "export";
+    const handle =
+      data.tracked_profiles.instagram?.username ||
+      data.tracked_profiles.x?.username ||
+      data.tracked_account?.screen_name ||
+      "export";
     a.href = url;
-    a.download = `x-${handle}-${new Date().toISOString().split("T")[0]}.json`;
+    a.download = `he4rt-social-${handle}-${new Date().toISOString().split("T")[0]}.json`;
     a.click();
     URL.revokeObjectURL(url);
   });
@@ -147,7 +177,7 @@ function handleExport() {
 
 function handleClear() {
   chrome.runtime.sendMessage({ action: "CLEAR_ALL" }, () => {
-    loadTweets();
+    loadPublications();
     loadEndpoints();
   });
 }
@@ -159,9 +189,11 @@ function loadEndpoints() {
   });
 }
 
-function renderEndpoints(endpoints: Record<string, Pick<EndpointStore, "count" | "lastSeen">>) {
+function renderEndpoints(
+  endpoints: Record<string, Pick<EndpointStore, "count" | "endpoint" | "lastSeen" | "provider">>,
+) {
   const names = Object.keys(endpoints);
-  endpointCountEl.textContent = `${names.length} endpoint${names.length !== 1 ? "s" : ""}`;
+  endpointCountEl.textContent = `${names.length} ${plural(names.length, "captura", "capturas")}`;
   copyAllBtn.disabled = names.length === 0;
 
   if (!names.length) {
@@ -183,11 +215,11 @@ function renderEndpoints(endpoints: Record<string, Pick<EndpointStore, "count" |
     card.className = "endpoint-card";
     card.innerHTML = `
       <div class="endpoint-info">
-        <div class="endpoint-name">${escapeHtml(name)}</div>
-        <div class="endpoint-meta">${ep.lastSeen ? new Date(ep.lastSeen).toLocaleTimeString() : ""}</div>
+        <div class="endpoint-name">${escapeHtml(ep.provider)}:${escapeHtml(ep.endpoint)}</div>
+        <div class="endpoint-meta">${ep.lastSeen ? new Date(ep.lastSeen).toLocaleTimeString("pt-BR") : ""}</div>
       </div>
       <span class="endpoint-count">${ep.count}</span>
-      <button class="endpoint-copy" data-ep="${escapeHtml(name)}">Copy</button>
+      <button class="endpoint-copy" data-ep="${escapeHtml(name)}">Copiar</button>
     `;
     card.querySelector(".endpoint-copy")?.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -203,10 +235,10 @@ function copyEndpoint(name: string, btn: HTMLButtonElement) {
     (r: EndpointPayloadsResponse | undefined) => {
       if (!r?.payloads?.length) return;
       navigator.clipboard.writeText(JSON.stringify(r.payloads, null, 2)).then(() => {
-        const orig = btn.textContent;
+        const original = btn.textContent;
         btn.textContent = "OK!";
         setTimeout(() => {
-          btn.textContent = orig;
+          btn.textContent = original;
         }, 1200);
       });
     },
@@ -217,13 +249,33 @@ function handleCopyAll() {
   chrome.runtime.sendMessage({ action: "GET_ALL_RAW" }, (r: AllRawResponse | undefined) => {
     if (!r?.endpoints) return;
     navigator.clipboard.writeText(JSON.stringify(r.endpoints, null, 2)).then(() => {
-      const orig = copyAllBtn.textContent;
+      const original = copyAllBtn.textContent;
       copyAllBtn.textContent = "OK!";
       setTimeout(() => {
-        copyAllBtn.textContent = orig;
+        copyAllBtn.textContent = original;
       }, 1200);
     });
   });
+}
+
+function labelType(type: SocialPublication["type"]) {
+  const labels: Record<SocialPublication["type"], string> = {
+    carousel: "carrossel",
+    image: "imagem",
+    original: "original",
+    quote: "quote",
+    reel: "reel",
+    reply: "resposta",
+    repost: "repost",
+    retweet: "retweet",
+    unknown: "tipo incerto",
+    video: "video",
+  };
+  return labels[type] || type;
+}
+
+function plural(count: number, singular: string, pluralText: string) {
+  return count === 1 ? singular : pluralText;
 }
 
 function formatDate(str: string) {

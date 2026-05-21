@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -12,45 +12,45 @@
       <h1>He4rt Analytics</h1>
       <div class="handle-row">
         <span class="at-sign">@</span>
-        <input type="text" id="handleInput" placeholder="He4rtDevs" spellcheck="false">
-        <button id="setHandleBtn" class="btn btn-sm" type="button">Track</button>
+        <input type="text" id="handleInput" placeholder="he4rtdevs" spellcheck="false">
+        <button id="setHandleBtn" class="btn btn-sm" type="button">Definir</button>
       </div>
     </div>
 
     <div class="tabs">
-      <button class="tab active" data-tab="tweets" type="button">Tweets</button>
-      <button class="tab" data-tab="endpoints" type="button">Raw</button>
+      <button class="tab active" data-tab="publications" type="button">Publicações</button>
+      <button class="tab" data-tab="captures" type="button">Capturas</button>
     </div>
 
-    <div id="tab-tweets" class="tab-content">
+    <div id="tab-publications" class="tab-content">
       <div class="toolbar">
         <div class="stats-col">
-          <span id="tweetCount" class="stats-label">0 tweets</span>
-          <span id="replyCount" class="stats-sub">0 community replies</span>
+          <span id="publicationCount" class="stats-label">0 publicações</span>
+          <span id="interactionCount" class="stats-sub">0 interações</span>
         </div>
         <div class="actions">
-          <button id="exportBtn" class="btn btn-sm btn-export" disabled type="button">Export JSON</button>
-          <button id="clearBtn" class="btn btn-sm btn-danger" disabled type="button">Clear</button>
+          <button id="exportBtn" class="btn btn-sm btn-export" disabled type="button">Exportar JSON</button>
+          <button id="clearBtn" class="btn btn-sm btn-danger" disabled type="button">Limpar</button>
         </div>
       </div>
 
-      <div id="emptyTweets" class="empty-state">
-        <p>No tweets captured yet.</p>
-        <p class="hint">Set a handle above, then visit that profile on X and scroll. Tweets are captured automatically from the UserTweets API.</p>
+      <div id="emptyPublications" class="empty-state">
+        <p>Nenhuma publicação capturada ainda.</p>
+        <p class="hint">Defina um perfil acima, abra X ou Instagram e navegue pelas publicações. A captura acontece automaticamente.</p>
       </div>
 
-      <div id="tweetList" class="tweet-list hidden"></div>
+      <div id="publicationList" class="publication-list hidden"></div>
     </div>
 
-    <div id="tab-endpoints" class="tab-content hidden">
+    <div id="tab-captures" class="tab-content hidden">
       <div class="toolbar">
-        <span id="endpointCount" class="stats-label">0 endpoints</span>
+        <span id="endpointCount" class="stats-label">0 capturas</span>
         <div class="actions">
-          <button id="copyAllBtn" class="btn btn-sm btn-payload" disabled type="button">Copy All</button>
+          <button id="copyAllBtn" class="btn btn-sm btn-payload" disabled type="button">Copiar tudo</button>
         </div>
       </div>
       <div id="emptyEndpoints" class="empty-state">
-        <p>No requests captured.</p>
+        <p>Nenhuma request capturada.</p>
       </div>
       <div id="endpointList" class="endpoint-list hidden"></div>
     </div>
