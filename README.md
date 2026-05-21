@@ -1,12 +1,12 @@
 # He4rt Analytics
 
-Browser extension que captura passivamente as respostas GraphQL do Twitter/X pra rastrear engajamento da comunidade He4rt Developers.
+Extensão de navegador que captura passivamente as respostas GraphQL do Twitter/X para rastrear engajamento da comunidade He4rt Developers.
 
 Feita pra alimentar o **He4rt Hub** (Laravel) com dados estruturados de engajamento -- quem interage com nosso conteudo, como os posts performam, e onde o crescimento da comunidade ta acontecendo.
 
 ## O Problema
 
-O Twitter/X nao da pros community managers os dados que eles precisam. Voce ve likes e views tweet por tweet, mas nao consegue:
+O Twitter/X nao da aos gestores de comunidade os dados que eles precisam. Voce ve curtidas e visualizacoes tweet por tweet, mas nao consegue:
 
 - Exportar dados de engajamento em massa
 - Ver quais membros da comunidade interagem consistentemente com seu conteudo
@@ -18,13 +18,13 @@ Essa extensao roda em background enquanto voce navega no X, intercepta as respos
 ## Como Funciona
 
 ```
-  X/Twitter (browser)          Extension                    He4rt Hub (Laravel)
+  X/Twitter (navegador)        Extensao                     He4rt Hub (Laravel)
   ┌─────────────────┐     ┌──────────────────┐          ┌──────────────────────┐
   │                 │     │                  │          │                      │
-  │  Voce navega    │────►│  interceptor.js  │          │   API endpoint       │
+  │  Voce navega    │────►│  interceptor.js  │          │   Endpoint da API    │
   │  o X normal     │     │  (MAIN world)    │          │   POST /analytics    │
   │                 │     │                  │          │                      │
-  │  Requests GQL   │     │  Patch no fetch()│          │   Ingere JSON:       │
+  │  Requisicoes GQL│     │  Patch no fetch()│          │   Ingere JSON:       │
   │  acontecem      │     │  Clona response  │          │   - tweets           │
   │  normalmente    │     │  PostMessage     │          │   - engajamento      │
   │                 │     │                  │          │   - dados comunidade │
@@ -34,10 +34,10 @@ Essa extensao roda em background enquanto voce navega no X, intercepta as respos
                           │  Repassa pro BG  │                    │
                           ├──────────────────┤          ┌─────────▼───────────┐
                           │  background.js   │          │                     │
-                          │                  │  Export   │   Dashboard         │
+                          │                  │  Exporta  │   Painel            │
                           │  Filtra por      │  JSON    │   Metricas comunid. │
-                          │  handle tracked  │─────────►│   Engajamento       │
-                          │  Consolida       │          │   Performance       │
+                          │  handle rastreado│─────────►│   Engajamento       │
+                          │  Consolida       │          │   Desempenho        │
                           │  Deduplica       │          │                     │
                           └──────────────────┘          └─────────────────────┘
 ```
@@ -45,7 +45,7 @@ Essa extensao roda em background enquanto voce navega no X, intercepta as respos
 ### Fluxo de Captura
 
 ```
- USER                                    EXTENSION
+ USUARIO                                 EXTENSAO
   │                                         │
   │  👆 Digita "He4rtDevs" + Track          │
   │ ──────────────────────────────────────► │
@@ -53,7 +53,7 @@ Essa extensao roda em background enquanto voce navega no X, intercepta as respos
   │                                         │  chrome.storage.local.set()
   │                                         │
   │  📱 Abre x.com/He4rtDevs               │
-  │     e scrolla os tweets                 │
+  │     e rola os tweets                    │
   │ ──────────────────────────────────────► │
   │                                         │  interceptor.js: fetch() interceptado
   │                                         │  endpoint: UserTweets
@@ -61,31 +61,31 @@ Essa extensao roda em background enquanto voce navega no X, intercepta as respos
   │                                         │  extrai: tweet_id, text, metrics
   │                                         │  deduplica por tweet_id
   │                                         │
-  │  👆 Clica nos likes de um tweet         │
-  │     e scrolla o modal                   │
+  │  👆 Clica nas curtidas de um tweet      │
+  │     e rola o modal                      │
   │ ──────────────────────────────────────► │
   │                                         │  endpoint: Favoriters
-  │                                         │  extrai: users com followers, badges
-  │                                         │  linka ao tweet_id via URL
+  │                                         │  extrai: usuarios com seguidores e badges
+  │                                         │  vincula ao tweet_id via URL
   │                                         │
   │  👆 Abre popup → Export JSON            │
   │ ──────────────────────────────────────► │
   │                                         │  buildExportJSON()
   │    ┌────────────────────────────────┐   │  consolida tweets + replies +
-  │    │ x-He4rtDevs-2026-05-19.json  │   │  favoriters + summary
+  │    │ x-He4rtDevs-2026-05-19.json  │   │  favoriters + resumo
   │    │ (download automatico)         │   │
   │    └────────────────────────────────┘   │
 ```
 
 ### O que Captura
 
-| Endpoint | O que extraimos |
-|---|---|
-| `UserTweets` | Todos os tweets do handle rastreado com metricas completas |
-| `UserByScreenName` | Dados do perfil (followers, bio, etc) |
-| `Favoriters` | Usuarios que curtiram tweets especificos |
-| `TweetDetail` | Threads de reply (replies da comunidade ao handle rastreado) |
-| Todos os outros GraphQL | Payloads raw guardados pra debug/uso futuro |
+| Endpoint                | O que extraimos                                                |
+| ----------------------- | -------------------------------------------------------------- |
+| `UserTweets`            | Todos os tweets do handle rastreado com metricas completas     |
+| `UserByScreenName`      | Dados do perfil (seguidores, bio, etc)                         |
+| `Favoriters`            | Usuarios que curtiram tweets especificos                       |
+| `TweetDetail`           | Threads de reply (respostas da comunidade ao handle rastreado) |
+| Todos os outros GraphQL | Payloads brutos guardados pra debug/uso futuro                 |
 
 ## Instalacao
 
@@ -94,6 +94,20 @@ Essa extensao roda em background enquanto voce navega no X, intercepta as respos
 3. Ative o **Modo desenvolvedor**
 4. Clique em **Carregar sem compactacao** e selecione esta pasta
 
+## Validacao e Teste De Fumaca
+
+Antes de recarregar a extensao no Chrome, rode:
+
+```bash
+node scripts/validate-extension.mjs
+```
+
+Esse comando valida a estrutura do Manifest V3, faz `node --check` nos scripts principais e roda testes com dados fixos das respostas GraphQL. O fluxo completo de instalacao, recarregamento e teste de fumaca em `x.com/He4rtDevs` esta documentado em [`docs/chrome-pipeline-teste.md`](docs/chrome-pipeline-teste.md).
+
+## Decisoes De Arquitetura
+
+- [`ADR 0001: Coleta de dados sociais via extensao Chrome, Playwright e OpenClaw`](docs/adr/0001-coleta-social-via-extensao-openclaw.md)
+
 ## Uso
 
 ### Capturando Dados
@@ -101,8 +115,8 @@ Essa extensao roda em background enquanto voce navega no X, intercepta as respos
 1. Clique no icone da extensao
 2. Digite o handle que quer rastrear (ex: `He4rtDevs`) e clique **Track**
 3. Abra o perfil dessa conta no X
-4. Scroll pelos tweets -- a extensao captura tudo passivamente
-5. Pra capturar favoriters: clique no numero de likes e scroll pelo modal
+4. Role pelos tweets -- a extensao captura tudo passivamente
+5. Pra capturar favoriters: clique no numero de curtidas e role pelo modal
 6. Abra o popup pra ver os tweets capturados com metricas
 
 ### Exportando
@@ -133,7 +147,7 @@ Clique **Export JSON** pra baixar o arquivo estruturado:
         "view_count": 354
       },
       "hashtags": ["He4rtDevelopers"],
-      "user_mentions": [{"screen_name": "He4rtDevs"}],
+      "user_mentions": [{ "screen_name": "He4rtDevs" }],
       "media_count": 2,
       "source": "Twitter for iPhone"
     }
@@ -151,7 +165,12 @@ Clique **Export JSON** pra baixar o arquivo estruturado:
   ],
   "favoriters_by_tweet": {
     "2056491987205865474": [
-      { "rest_id": "...", "screen_name": "...", "following": true, "followed_by": true }
+      {
+        "rest_id": "...",
+        "screen_name": "...",
+        "following": true,
+        "followed_by": true
+      }
     ]
   },
   "summary": {
@@ -239,11 +258,11 @@ foreach ($data['favoriters_by_tweet'] as $tweetId => $users) {
 
 ## Roadmap
 
-- [ ] **Auto-scroll capture** -- scroll automatico pra capturar historico completo de tweets sem interacao manual
-- [ ] **Dashboard de metricas** -- graficos de engajamento e tendencias direto no popup da extensao
-- [ ] **Webhook/API push** -- enviar dados capturados direto pra API do He4rt Hub ao inves de exportar JSON manualmente
-- [ ] **Parsing de TweetDetail** -- extrair threads de replies completas ao abrir tweets individuais
-- [ ] **Scoring de engajamento** -- rankear membros da comunidade por frequencia e qualidade de interacao
+- [ ] **Captura com rolagem automatica** -- scroll automatico pra capturar historico completo de tweets sem interacao manual
+- [ ] **Painel de metricas** -- graficos de engajamento e tendencias direto no popup da extensao
+- [ ] **Envio via webhook/API** -- enviar dados capturados direto pra API do He4rt Hub ao inves de exportar JSON manualmente
+- [ ] **Processamento de TweetDetail** -- extrair threads de replies completas ao abrir tweets individuais
+- [ ] **Pontuacao de engajamento** -- rankear membros da comunidade por frequencia e qualidade de interacao
 
 ## Licenca
 
