@@ -1,9 +1,9 @@
 # Pipeline De Teste No Chrome
 
-Esta extensão não tem etapa de build. O artefato de implantação é esta pasta:
+Esta extensão usa Bun e TypeScript. O artefato de implantação é gerado nesta pasta:
 
 ```text
-/Users/prehysterik/Code/marketing-extension/instagram
+/Users/prehysterik/Code/marketing-extension/instagram/dist/chrome
 ```
 
 ## Validação Local
@@ -11,7 +11,9 @@ Esta extensão não tem etapa de build. O artefato de implantação é esta past
 Rode isto antes de carregar ou recarregar a extensão sem compactação:
 
 ```bash
-node scripts/validate-extension.mjs
+bun install
+bun run build
+bun run validate
 ```
 
 O validador verifica:
@@ -23,7 +25,7 @@ O validador verifica:
 Você também pode rodar apenas os testes:
 
 ```bash
-node --test
+bun test
 ```
 
 ## Instalar Ou Recarregar No Chrome
@@ -33,7 +35,7 @@ Use seu perfil existente do Chrome para que o X.com possa reutilizar sua sessão
 1. Abra `chrome://extensions`.
 2. Ative o modo de desenvolvedor.
 3. Clique em "Carregar sem compactação".
-4. Selecione `/Users/prehysterik/Code/marketing-extension/instagram`.
+4. Selecione `/Users/prehysterik/Code/marketing-extension/instagram/dist/chrome`.
 5. Fixe a He4rt Analytics para facilitar a abertura do popup.
 6. Após alterações no código, clique em "Recarregar" no cartão da extensão He4rt Analytics.
 
@@ -43,7 +45,7 @@ O service worker mantém o estado de captura em memória. Recarregar o Chrome, o
 
 Alvo padrão: `He4rtDevs`.
 
-1. Rode `node scripts/validate-extension.mjs`.
+1. Rode `bun run build && bun run validate`.
 2. Recarregue a extensão sem compactação em `chrome://extensions`.
 3. Abra `https://x.com/He4rtDevs`.
 4. Abra o popup da He4rt Analytics.

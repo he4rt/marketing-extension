@@ -2,8 +2,10 @@
 from PIL import Image, ImageDraw, ImageFont
 import os
 
+ICON_DIR = 'src/assets/icons'
+
 # Create icons directory
-os.makedirs('icons', exist_ok=True)
+os.makedirs(ICON_DIR, exist_ok=True)
 
 def create_icon(size):
     # Create image with gradient background
@@ -43,7 +45,7 @@ def create_icon(size):
 # Generate icons
 for size in [16, 48, 128]:
     icon = create_icon(size)
-    icon.save(f'icons/icon{size}.png')
+    icon.save(f'{ICON_DIR}/icon{size}.png')
     print(f'Created icon{size}.png')
 
 print('Icons generated successfully!')

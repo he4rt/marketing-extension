@@ -6,7 +6,7 @@ Este arquivo centraliza as instruções para agentes de código que trabalham ne
 
 He4rt Analytics — uma extensão Chrome (Manifest V3) que intercepta passivamente respostas da API GraphQL do Twitter/X para rastrear engajamento da comunidade. Foi desenhada para exportar JSON estruturado para ingestão no app Laravel do He4rt Hub.
 
-Não há etapa de build, bundler ou dependências na versão legada. Carregue a pasta diretamente em `chrome://extensions/` com o modo de desenvolvedor ativado. Quando a estrutura TypeScript/Bun estiver ativa, o artefato carregável será `dist/chrome`.
+A extensão usa Bun e TypeScript. Rode `bun run build` e carregue a pasta `dist/chrome` em `chrome://extensions/` com o modo de desenvolvedor ativado.
 
 ## Arquitetura
 

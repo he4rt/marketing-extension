@@ -5,7 +5,6 @@
   "type": "module",
   "scripts": {
     "build": "bun run scripts/build.ts",
-    "format": "bun fmt .",
     "package": "bun run scripts/package-extension.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
@@ -17,4 +16,3 @@
     "typescript": "^5.9.3"
   }
 }
-

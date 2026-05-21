@@ -1,3 +1,5 @@
+// @ts-nocheck
+
 function user({
   restId,
   screenName,

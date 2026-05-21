@@ -122,7 +122,7 @@ async function validateManifest() {
 
 async function validateSyntax() {
   for (const file of scriptFiles) {
-    await run(process.execPath, ["--check", file], extensionDir);
+    await run("node", ["--check", file], extensionDir);
   }
   ok("scripts compilados fazem parse");
 }

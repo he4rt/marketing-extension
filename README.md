@@ -90,19 +90,22 @@ Essa extensao roda em background enquanto voce navega no X, intercepta as respos
 ## Instalacao
 
 1. Clone este repo
-2. Va em `chrome://extensions/`
-3. Ative o **Modo desenvolvedor**
-4. Clique em **Carregar sem compactacao** e selecione esta pasta
+2. Rode `bun install`
+3. Rode `bun run build`
+4. Va em `chrome://extensions/`
+5. Ative o **Modo desenvolvedor**
+6. Clique em **Carregar sem compactacao** e selecione a pasta `dist/chrome`
 
 ## Validacao e Teste De Fumaca
 
 Antes de recarregar a extensao no Chrome, rode:
 
 ```bash
-node scripts/validate-extension.mjs
+bun run build
+bun run validate
 ```
 
-Esse comando valida a estrutura do Manifest V3, faz `node --check` nos scripts principais e roda testes com dados fixos das respostas GraphQL. O fluxo completo de instalacao, recarregamento e teste de fumaca em `x.com/He4rtDevs` esta documentado em [`docs/chrome-pipeline-teste.md`](docs/chrome-pipeline-teste.md).
+Esses comandos compilam a extensao em `dist/chrome`, validam a estrutura do Manifest V3, fazem parse dos scripts gerados e rodam testes com dados fixos das respostas GraphQL. O fluxo completo de instalacao, recarregamento e teste de fumaca em `x.com/He4rtDevs` esta documentado em [`docs/chrome-pipeline-teste.md`](docs/chrome-pipeline-teste.md).
 
 ## Decisoes De Arquitetura
 
