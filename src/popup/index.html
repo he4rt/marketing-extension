@@ -13,13 +13,13 @@
       <div class="handle-row">
         <span class="at-sign">@</span>
         <input type="text" id="handleInput" placeholder="He4rtDevs" spellcheck="false">
-        <button id="setHandleBtn" class="btn btn-sm">Track</button>
+        <button id="setHandleBtn" class="btn btn-sm" type="button">Track</button>
       </div>
     </div>
 
     <div class="tabs">
-      <button class="tab active" data-tab="tweets">Tweets</button>
-      <button class="tab" data-tab="endpoints">Raw</button>
+      <button class="tab active" data-tab="tweets" type="button">Tweets</button>
+      <button class="tab" data-tab="endpoints" type="button">Raw</button>
     </div>
 
     <div id="tab-tweets" class="tab-content">
@@ -29,8 +29,8 @@
           <span id="replyCount" class="stats-sub">0 community replies</span>
         </div>
         <div class="actions">
-          <button id="exportBtn" class="btn btn-sm btn-export" disabled>Export JSON</button>
-          <button id="clearBtn" class="btn btn-sm btn-danger" disabled>Clear</button>
+          <button id="exportBtn" class="btn btn-sm btn-export" disabled type="button">Export JSON</button>
+          <button id="clearBtn" class="btn btn-sm btn-danger" disabled type="button">Clear</button>
         </div>
       </div>
 
@@ -46,7 +46,7 @@
       <div class="toolbar">
         <span id="endpointCount" class="stats-label">0 endpoints</span>
         <div class="actions">
-          <button id="copyAllBtn" class="btn btn-sm btn-payload" disabled>Copy All</button>
+          <button id="copyAllBtn" class="btn btn-sm btn-payload" disabled type="button">Copy All</button>
         </div>
       </div>
       <div id="emptyEndpoints" class="empty-state">
@@ -59,4 +59,3 @@
   <script src="popup.js"></script>
 </body>
 </html>
-

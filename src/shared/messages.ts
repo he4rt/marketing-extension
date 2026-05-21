@@ -58,4 +58,3 @@ export type PageGraphqlMessage = {
   type: "X_GRAPHQL_RESPONSE";
   url?: string;
 };
-

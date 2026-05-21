@@ -1,4 +1,10 @@
-import type { AccountInfo, BackgroundStore, ExportJSON, Favoriter, TweetData } from "../shared/domain";
+import type {
+  AccountInfo,
+  BackgroundStore,
+  ExportJSON,
+  Favoriter,
+  TweetData,
+} from "../shared/domain";
 import type { RuntimeMessage } from "../shared/messages";
 
 type AnyRecord = Record<string, any>;
@@ -66,7 +72,7 @@ function extractTweetData(result: AnyRecord | null | undefined): TweetData | nul
       reply_count: legacy.reply_count || 0,
       quote_count: legacy.quote_count || 0,
       bookmark_count: legacy.bookmark_count || 0,
-      view_count: Number.parseInt(views.count) || 0,
+      view_count: Number.parseInt(views.count, 10) || 0,
     },
     hashtags: (legacy.entities?.hashtags || []).map((h: AnyRecord) => h.text),
     user_mentions: (legacy.entities?.user_mentions || []).map((m: AnyRecord) => ({
@@ -210,10 +216,14 @@ function buildExportJSON(store: BackgroundStore): ExportJSON {
   const totalReplies = originalTweets.reduce((s, t) => s + t.metrics.reply_count, 0);
 
   const uniqueEngagers = new Set<string>();
-  replies.forEach((r) => uniqueEngagers.add(r.author.rest_id));
+  replies.forEach((r) => {
+    uniqueEngagers.add(r.author.rest_id);
+  });
   Object.values(store.favoriters)
     .flat()
-    .forEach((u) => uniqueEngagers.add(u.rest_id));
+    .forEach((u) => {
+      uniqueEngagers.add(u.rest_id);
+    });
 
   return {
     tracked_account: store.accountInfo || { screen_name: store.trackedHandle },
@@ -231,8 +241,12 @@ function buildExportJSON(store: BackgroundStore): ExportJSON {
       total_likes: totalLikes,
       total_views: totalViews,
       total_reply_engagement: totalReplies,
-      avg_likes_per_original: originalTweets.length ? Math.round(totalLikes / originalTweets.length) : 0,
-      avg_views_per_original: originalTweets.length ? Math.round(totalViews / originalTweets.length) : 0,
+      avg_likes_per_original: originalTweets.length
+        ? Math.round(totalLikes / originalTweets.length)
+        : 0,
+      avg_views_per_original: originalTweets.length
+        ? Math.round(totalViews / originalTweets.length)
+        : 0,
       unique_engagers: uniqueEngagers.size,
       top_tweet_by_likes:
         [...originalTweets].sort((a, b) => b.metrics.favorite_count - a.metrics.favorite_count)[0]

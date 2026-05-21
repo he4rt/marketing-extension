@@ -45,4 +45,3 @@ await copyFile("src/assets/icons/icon48.png", "icons/icon48.png");
 await copyFile("src/assets/icons/icon128.png", "icons/icon128.png");
 
 console.log(`Extensão compilada em ${path.relative(root, distDir)}`);
-

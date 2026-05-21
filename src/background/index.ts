@@ -1,5 +1,5 @@
-import { createStore, handleRuntimeMessage } from "./controller";
 import type { RuntimeMessage } from "../shared/messages";
+import { createStore, handleRuntimeMessage } from "./controller";
 
 const store = createStore();
 

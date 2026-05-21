@@ -39,9 +39,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
   document.querySelectorAll<HTMLButtonElement>(".tab").forEach((tab) => {
     tab.addEventListener("click", () => {
-      document.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
+      document.querySelectorAll(".tab").forEach((t) => {
+        t.classList.remove("active");
+      });
       tab.classList.add("active");
-      document.querySelectorAll(".tab-content").forEach((c) => c.classList.add("hidden"));
+      document.querySelectorAll(".tab-content").forEach((c) => {
+        c.classList.add("hidden");
+      });
       getElement(`tab-${tab.dataset.tab}`).classList.remove("hidden");
     });
   });
@@ -170,7 +174,9 @@ function renderEndpoints(endpoints: Record<string, Pick<EndpointStore, "count" |
   endpointList.classList.remove("hidden");
   endpointList.innerHTML = "";
 
-  for (const name of names.sort((a, b) => (endpoints[b]?.count || 0) - (endpoints[a]?.count || 0))) {
+  for (const name of names.sort(
+    (a, b) => (endpoints[b]?.count || 0) - (endpoints[a]?.count || 0),
+  )) {
     const ep = endpoints[name];
     if (!ep) continue;
     const card = document.createElement("div");

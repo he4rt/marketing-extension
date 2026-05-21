@@ -13,4 +13,3 @@ window.addEventListener("message", (event: MessageEvent<PageGraphqlMessage>) => 
     });
   }
 });
-

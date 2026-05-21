@@ -105,7 +105,13 @@ bun run build
 bun run validate
 ```
 
-Esses comandos compilam a extensao em `dist/chrome`, validam a estrutura do Manifest V3, fazem parse dos scripts gerados e rodam testes com dados fixos das respostas GraphQL. O fluxo completo de instalacao, recarregamento e teste de fumaca em `x.com/He4rtDevs` esta documentado em [`docs/chrome-pipeline-teste.md`](docs/chrome-pipeline-teste.md).
+Esses comandos compilam a extensao em `dist/chrome`, rodam Biome, validam a estrutura do Manifest V3, fazem parse dos scripts gerados e rodam testes com dados fixos das respostas GraphQL. O fluxo completo de instalacao, recarregamento e teste de fumaca em `x.com/He4rtDevs` esta documentado em [`docs/chrome-pipeline-teste.md`](docs/chrome-pipeline-teste.md).
+
+Para formatar o codigo localmente:
+
+```bash
+bun run format
+```
 
 ## Decisoes De Arquitetura
 

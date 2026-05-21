@@ -99,4 +99,3 @@ export type ExportJSON = {
   tracked_account: AccountInfo | { screen_name: string };
   tweets: TweetData[];
 };
-

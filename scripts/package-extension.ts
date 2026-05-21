@@ -12,4 +12,3 @@ await Bun.$`rm -f ${zipPath}`;
 await Bun.$`cd ${distDir} && zip -qr ${zipPath} .`;
 
 console.log(`Pacote gerado em ${path.relative(root, zipPath)}`);
-

@@ -1,6 +1,6 @@
+import { spawn } from "node:child_process";
 import { constants } from "node:fs";
 import { access, readFile } from "node:fs/promises";
-import { spawn } from "node:child_process";
 import path from "node:path";
 
 const root = path.resolve(import.meta.dir, "..");

@@ -18,9 +18,16 @@ bun run validate
 
 O validador verifica:
 
+- formatação e lint com Biome;
 - sintaxe JavaScript de `background.js`, `content.js`, `interceptor.js` e `popup.js`;
 - configuração do Manifest V3, permissões de host, mundos dos content scripts, configuração do popup e caminhos dos ícones;
 - testes com dados fixos para o protocolo de mensagens do background, comportamento do analisador, deduplicação e formato do resumo de exportação.
+
+Para formatar o código localmente:
+
+```bash
+bun run format
+```
 
 Você também pode rodar apenas os testes:
 
