@@ -5,6 +5,7 @@ const X_GRAPHQL_PATH = "/i/api/graphql/";
 const INSTAGRAM_MARKERS = [
   "xdt_api__v1__feed__timeline__connection",
   "xdt_api__v1__media__media_id__comments__connection",
+  "xdt_api__v1__media__media_id__comments__parent_comment_id__child_comments__connection",
   '"like_count"',
   '"comment_count"',
   '"profile_pic_url"',
@@ -62,7 +63,12 @@ function inferInstagramEndpointFromPayload(payload: unknown, fallback: string) {
   if (serialized.includes("xdt_api__v1__feed__timeline__connection")) {
     return "InstagramFeedTimeline";
   }
-  if (serialized.includes("xdt_api__v1__media__media_id__comments__connection")) {
+  if (
+    serialized.includes("xdt_api__v1__media__media_id__comments__connection") ||
+    serialized.includes(
+      "xdt_api__v1__media__media_id__comments__parent_comment_id__child_comments__connection",
+    )
+  ) {
     return "InstagramComments";
   }
   if (serialized.includes('"profile_pic_url"') && serialized.includes('"username"')) {

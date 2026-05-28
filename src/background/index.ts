@@ -16,6 +16,8 @@ function mergeStore(target: BackgroundStore, persisted: Partial<BackgroundStore>
     commentsByPublication: persisted.commentsByPublication || {},
     engagementsByPublication: persisted.engagementsByPublication || {},
     instagramPublicationIdsByShortcode: persisted.instagramPublicationIdsByShortcode || {},
+    instagramVisiblePublications: persisted.instagramVisiblePublications || [],
+    instagramVisibleComments: persisted.instagramVisibleComments || [],
     communityReplies: persisted.communityReplies || {},
     trackedProfiles: persisted.trackedProfiles || {},
     tweets: persisted.tweets || {},
@@ -59,7 +61,8 @@ function shouldPersist(request: RuntimeMessage) {
     request.action === "SET_HANDLE" ||
     request.action === "CLEAR_ALL" ||
     request.action === "PAGE_SESSION_STARTED" ||
-    request.action === "VISIBLE_PUBLICATIONS"
+    request.action === "VISIBLE_PUBLICATIONS" ||
+    request.action === "VISIBLE_COMMENTS"
   );
 }
 
@@ -87,7 +90,8 @@ chrome.runtime.onMessage.addListener((request: RuntimeMessage, _sender, sendResp
         request.action === "CAPTURED_PAYLOAD" ||
         request.action === "GRAPHQL_CAPTURED" ||
         request.action === "PAGE_SESSION_STARTED" ||
-        request.action === "VISIBLE_PUBLICATIONS"
+        request.action === "VISIBLE_PUBLICATIONS" ||
+        request.action === "VISIBLE_COMMENTS"
       ) {
         notifyStoreUpdated();
       }

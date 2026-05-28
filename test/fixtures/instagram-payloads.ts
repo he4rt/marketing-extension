@@ -194,6 +194,31 @@ export const instagramCommentsPayload = {
   },
 };
 
+export const instagramChildCommentsPayload = {
+  data: {
+    xdt_api__v1__media__media_id__comments__parent_comment_id__child_comments__connection: {
+      edges: [
+        {
+          node: {
+            pk: "17864617854572288",
+            user: he4rt,
+            text: "@teamfighttacticsbrasil o top1 hoje tem nome e sobrenome 🤝",
+            created_at: 1_779_917_923,
+            comment_like_count: 0,
+            parent_comment_id: "18199045243364553",
+            has_liked_comment: false,
+          },
+          cursor: "",
+        },
+      ],
+      page_info: {
+        has_next_page: false,
+        end_cursor: null,
+      },
+    },
+  },
+};
+
 export const instagramLikersPayload = {
   data: {
     users: [

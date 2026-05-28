@@ -71,17 +71,21 @@ export type SocialPublication = {
 
 export type SocialComment = {
   author: SocialActor;
+  captured_at?: string;
   comment_id: string;
   created_at: string;
   like_count: number;
   parent_comment_id: null | string;
   provider: SocialProvider;
   publication_id: string;
+  relative_created_at?: string;
+  source?: string;
   text: string;
 };
 
 export type SocialEngagement = {
   actor: SocialActor;
+  captured_at?: string;
   engaged_at?: null | string;
   engagement_id: string;
   kind: "comment" | "like";
@@ -130,6 +134,17 @@ export type BackgroundStore = {
     shortcode: string;
     text?: string;
     url: string;
+  }>;
+  instagramVisibleComments: Array<{
+    author: SocialActor;
+    captured_at: string;
+    comment_id: string;
+    like_count: number;
+    parent_comment_id: null | string;
+    publication_shortcode: string;
+    relative_created_at?: string;
+    source: string;
+    text: string;
   }>;
   lastUpdated: null | string;
   nextCaptureOrder: number;

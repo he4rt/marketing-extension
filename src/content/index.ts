@@ -4,6 +4,8 @@ const sentInstagramScripts = new Set<string>();
 const pageSessionKey = `${Date.now()}:${Math.random().toString(36).slice(2)}:${location.href}`;
 let visibleOrderTimer: number | null = null;
 let lastVisibleOrderSignature = "";
+let visibleCommentsTimer: number | null = null;
+let lastVisibleCommentsSignature = "";
 let scanTimerA: number | null = null;
 let scanTimerB: number | null = null;
 let extensionContextActive = true;
@@ -12,9 +14,11 @@ let instagramObserver: MutationObserver | null = null;
 function stopAfterInvalidContext() {
   extensionContextActive = false;
   if (visibleOrderTimer) clearTimeout(visibleOrderTimer);
+  if (visibleCommentsTimer) clearTimeout(visibleCommentsTimer);
   if (scanTimerA) clearTimeout(scanTimerA);
   if (scanTimerB) clearTimeout(scanTimerB);
   visibleOrderTimer = null;
+  visibleCommentsTimer = null;
   scanTimerA = null;
   scanTimerB = null;
   instagramObserver?.disconnect();
@@ -266,6 +270,10 @@ function parseCompactNumber(value?: string) {
   return Math.round(number);
 }
 
+function parseVisibleCount(text: string) {
+  return parseCompactNumber(text.replace(/\s+/g, "").match(/([\d.,]+[KkMm]?)/)?.[1]);
+}
+
 function inferVisibleInstagramMediaType(
   href: string,
   anchor: HTMLAnchorElement,
@@ -276,6 +284,213 @@ function inferVisibleInstagramMediaType(
   if (anchor.querySelectorAll("img").length > 1) return "carousel";
   if (anchor.querySelector("img")) return "image";
   return "unknown";
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function compactDomText(value: null | string | undefined) {
+  return (value || "").replace(/\s+/g, " ").trim();
+}
+
+function currentInstagramCommentPageShortcode() {
+  return currentInstagramShortcode() || "";
+}
+
+function parseInstagramCommentHref(href: string) {
+  const match = href.match(/\/(?:p|reel|reels)\/([^/?#]+)\/c\/([^/?#]+)/);
+  if (!match) return null;
+  return {
+    publicationShortcode: match[1] || "",
+    commentId: match[2] || "",
+  };
+}
+
+function findInstagramCommentRoot(anchor: HTMLAnchorElement) {
+  let best: Element | null = null;
+  let current: Element | null = anchor.parentElement;
+
+  while (current && current !== document.body && current !== document.documentElement) {
+    const commentLinkCount = Array.from(
+      current.querySelectorAll<HTMLAnchorElement>("a[href]"),
+    ).filter((link) => parseInstagramCommentHref(link.getAttribute("href") || "")).length;
+    const text = compactDomText(current.textContent);
+
+    if (commentLinkCount > 1) break;
+    if (commentLinkCount === 1 && /(Reply|Responder|Like|Curtir)/i.test(text)) {
+      best = current;
+    }
+    current = current.parentElement;
+  }
+
+  return best || anchor.parentElement;
+}
+
+function inferInstagramCommentAuthor(root: Element | null) {
+  const profileLinks = Array.from(root?.querySelectorAll<HTMLAnchorElement>("a[href]") || [])
+    .map((link) => {
+      const href = link.getAttribute("href") || "";
+      const username = href.match(/^\/([A-Za-z0-9._]+)\/?$/)?.[1] || "";
+      return { link, username, text: compactDomText(link.textContent) };
+    })
+    .filter((item) => item.username && !item.text.startsWith("@"));
+  const authorLink =
+    profileLinks.find((item) => item.text?.includes(item.username)) || profileLinks[0];
+  const profileImage = Array.from(root?.querySelectorAll<HTMLImageElement>("img[alt]") || []).find(
+    (image) => image.alt.includes("'s profile picture"),
+  );
+  const username = authorLink?.username || "";
+  const nameFromAlt = profileImage?.alt.replace(/'s profile picture$/, "") || "";
+
+  return {
+    provider_user_id: "",
+    username,
+    name: nameFromAlt || username,
+    avatar_url: profileImage?.currentSrc || profileImage?.src || "",
+  };
+}
+
+function inferInstagramCommentRelativeTime(root: Element | null, commentId: string) {
+  const link = Array.from(root?.querySelectorAll<HTMLAnchorElement>("a[href]") || []).find((item) =>
+    (item.getAttribute("href") || "").includes(`/c/${commentId}`),
+  );
+  return compactDomText(link?.textContent);
+}
+
+function inferInstagramCommentLikeCount(root: Element | null) {
+  const buttonText = Array.from(root?.querySelectorAll<HTMLButtonElement>("button") || [])
+    .map((button) => compactDomText(button.textContent))
+    .find((text) => /\d/.test(text) && /\b(like|curtida)/i.test(text));
+  if (buttonText) return parseVisibleCount(buttonText);
+
+  const rootText = compactDomText(root?.textContent);
+  return parseVisibleCount(rootText.match(/\b[\d.,]+[KkMm]?\s+(?:likes?|curtidas?)\b/i)?.[0] || "");
+}
+
+function inferInstagramCommentText(
+  root: Element | null,
+  username: string,
+  relativeCreatedAt: string,
+) {
+  let text = compactDomText(root?.textContent);
+  if (!text) return "";
+
+  if (username) {
+    text = text.replace(new RegExp(`^${escapeRegExp(username)}(?:Verified)?\\s*`, "i"), "");
+  }
+  if (relativeCreatedAt) {
+    text = text.replace(new RegExp(`^${escapeRegExp(relativeCreatedAt)}\\s*`, "i"), "");
+  } else {
+    text = text.replace(/^(?:\d+[smhdw]|now|agora)\s*/i, "");
+  }
+
+  text = text
+    .replace(/[\d.,]+[KkMm]?\s+(?:likes?|curtidas?).*$/i, "")
+    .replace(/(?:Reply|Responder).*$/i, "")
+    .replace(/(?:Like|Curtir).*$/i, "")
+    .replace(/(?:View all|Ver todas?|Hide all|Ocultar).+$/i, "")
+    .trim();
+
+  return text;
+}
+
+function inferInstagramParentCommentId(root: Element | null, commentId: string) {
+  let current = root?.parentElement || null;
+
+  while (current && current !== document.body && current !== document.documentElement) {
+    const commentIds = Array.from(current.querySelectorAll<HTMLAnchorElement>("a[href]"))
+      .map((link) => parseInstagramCommentHref(link.getAttribute("href") || "")?.commentId)
+      .filter((id): id is string => Boolean(id));
+    const currentIndex = commentIds.indexOf(commentId);
+
+    if (
+      currentIndex > 0 &&
+      /(Hide all replies|Ocultar|Ver respostas|View all)/i.test(compactDomText(current.textContent))
+    ) {
+      return commentIds[currentIndex - 1] || null;
+    }
+
+    current = current.parentElement;
+  }
+
+  return null;
+}
+
+function collectVisibleInstagramComments() {
+  const comments = new Map<
+    string,
+    {
+      author: {
+        avatar_url?: string;
+        name?: string;
+        provider_user_id?: string;
+        username: string;
+      };
+      comment_id: string;
+      like_count: number;
+      parent_comment_id: null | string;
+      publication_shortcode: string;
+      relative_created_at?: string;
+      source: string;
+      text: string;
+    }
+  >();
+  const currentShortcode = currentInstagramCommentPageShortcode();
+
+  for (const anchor of Array.from(document.querySelectorAll<HTMLAnchorElement>("a[href]"))) {
+    const parsed = parseInstagramCommentHref(anchor.getAttribute("href") || "");
+    if (!parsed?.commentId || !parsed.publicationShortcode) continue;
+    if (currentShortcode && parsed.publicationShortcode !== currentShortcode) continue;
+
+    const root = findInstagramCommentRoot(anchor);
+    const author = inferInstagramCommentAuthor(root);
+    const relativeCreatedAt = inferInstagramCommentRelativeTime(root, parsed.commentId);
+    const text = inferInstagramCommentText(root, author.username, relativeCreatedAt);
+    if (!author.username || !text) continue;
+
+    comments.set(parsed.commentId, {
+      author,
+      comment_id: parsed.commentId,
+      like_count: inferInstagramCommentLikeCount(root),
+      parent_comment_id: inferInstagramParentCommentId(root, parsed.commentId),
+      publication_shortcode: parsed.publicationShortcode,
+      relative_created_at: relativeCreatedAt || undefined,
+      source: "Instagram DOM",
+      text,
+    });
+  }
+
+  return [...comments.values()];
+}
+
+function publishVisibleInstagramComments() {
+  if (!extensionContextActive) return;
+  const publicationShortcode = currentInstagramCommentPageShortcode();
+  if (!publicationShortcode) return;
+
+  const commentLinkCount = Array.from(
+    document.querySelectorAll<HTMLAnchorElement>("a[href]"),
+  ).filter((anchor) => parseInstagramCommentHref(anchor.getAttribute("href") || "")).length;
+  const comments = collectVisibleInstagramComments();
+  if (commentLinkCount > 0 && !comments.length) return;
+  if (!comments.length) return;
+
+  const signature = comments
+    .map((comment) => `${comment.comment_id}:${comment.text}:${comment.like_count}`)
+    .sort()
+    .join("|");
+  if (signature === lastVisibleCommentsSignature) return;
+  lastVisibleCommentsSignature = signature;
+
+  sendRuntimeMessage({
+    action: "VISIBLE_COMMENTS",
+    provider: "instagram",
+    pageUrl: location.href,
+    publication_shortcode: publicationShortcode,
+    captured_at: new Date().toISOString(),
+    comments,
+  });
 }
 
 function publishVisibleInstagramOrder() {
@@ -303,6 +518,15 @@ function scheduleVisibleOrder() {
   }, 400);
 }
 
+function scheduleVisibleComments() {
+  if (!extensionContextActive) return;
+  if (visibleCommentsTimer) clearTimeout(visibleCommentsTimer);
+  visibleCommentsTimer = window.setTimeout(() => {
+    visibleCommentsTimer = null;
+    publishVisibleInstagramComments();
+  }, 500);
+}
+
 if (location.hostname.includes("instagram.com")) {
   const scheduleScan = () => {
     if (!extensionContextActive) return;
@@ -311,6 +535,7 @@ if (location.hostname.includes("instagram.com")) {
     scanTimerA = window.setTimeout(scanInstagramSsrScripts, 500);
     scanTimerB = window.setTimeout(scanInstagramSsrScripts, 2000);
     scheduleVisibleOrder();
+    scheduleVisibleComments();
   };
 
   if (document.readyState === "loading") {
@@ -335,4 +560,8 @@ if (location.hostname.includes("instagram.com")) {
     }
   });
   instagramObserver.observe(document.documentElement, { childList: true, subtree: true });
+  window.addEventListener("scroll", () => {
+    scheduleVisibleOrder();
+    scheduleVisibleComments();
+  });
 }

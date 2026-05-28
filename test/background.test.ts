@@ -3,6 +3,7 @@ import { createStore, handleRuntimeMessage } from "../src/background/controller"
 import type { BackgroundStore } from "../src/shared/domain";
 import type { RuntimeMessage } from "../src/shared/messages";
 import {
+  instagramChildCommentsPayload,
   instagramCommentsPayload,
   instagramFeedPayload,
   instagramLikersPayload,
@@ -527,6 +528,234 @@ describe("background controller", () => {
     expect(enriched.publications.map((publication) => publication.visible_order)).toEqual([1, 2]);
     expect(enriched.publications.every((publication) => !publication.is_placeholder)).toBe(true);
     expect(enriched.publications[1]?.text).toContain("Laravel");
+  });
+
+  test("captura comentários visíveis do Instagram pelo DOM e exporta em comments_by_publication", () => {
+    const app = createHarness();
+
+    app.sendMessage({ action: "SET_HANDLE", handle: "viqsm" });
+    app.sendMessage({
+      action: "VISIBLE_PUBLICATIONS",
+      provider: "instagram",
+      pageUrl: "https://www.instagram.com/p/DY2ywueFXAj/",
+      shortcodes: ["DY2ywueFXAj"],
+      items: [
+        {
+          shortcode: "DY2ywueFXAj",
+          url: "https://www.instagram.com/p/DY2ywueFXAj/",
+          mediaType: "carousel",
+        },
+      ],
+    });
+    app.sendMessage({
+      action: "VISIBLE_COMMENTS",
+      provider: "instagram",
+      pageUrl: "https://www.instagram.com/p/DY2ywueFXAj/",
+      publication_shortcode: "DY2ywueFXAj",
+      captured_at: "2026-05-28T10:00:00.000Z",
+      comments: [
+        {
+          comment_id: "18199045243364553",
+          publication_shortcode: "DY2ywueFXAj",
+          author: {
+            username: "teamfighttacticsbrasil",
+            name: "teamfighttacticsbrasil",
+          },
+          text: "look do dia pra ser top 1 😎❤️",
+          like_count: 2,
+          parent_comment_id: null,
+          relative_created_at: "3h",
+          source: "Instagram DOM",
+        },
+      ],
+    });
+    app.sendMessage({
+      action: "VISIBLE_COMMENTS",
+      provider: "instagram",
+      pageUrl: "https://www.instagram.com/p/DY2ywueFXAj/",
+      publication_shortcode: "DY2ywueFXAj",
+      captured_at: "2026-05-28T10:01:00.000Z",
+      comments: [
+        {
+          comment_id: "18199045243364553",
+          publication_shortcode: "DY2ywueFXAj",
+          author: {
+            username: "teamfighttacticsbrasil",
+            name: "teamfighttacticsbrasil",
+          },
+          text: "look do dia pra ser top 1 😎❤️",
+          like_count: 2,
+          parent_comment_id: null,
+          relative_created_at: "3h",
+          source: "Instagram DOM",
+        },
+        {
+          comment_id: "17864617854572288",
+          publication_shortcode: "DY2ywueFXAj",
+          author: {
+            username: "viqsm",
+            name: "viqsm",
+          },
+          text: "@teamfighttacticsbrasil o top1 hoje tem nome e sobrenome 🤝",
+          like_count: 0,
+          parent_comment_id: "18199045243364553",
+          relative_created_at: "3h",
+          source: "Instagram DOM",
+        },
+      ],
+    });
+
+    const exported = app.sendMessage({ action: "GET_EXPORT" }) as {
+      comments_by_publication: Record<
+        string,
+        Array<{
+          captured_at: string;
+          comment_id: string;
+          like_count: number;
+          parent_comment_id: null | string;
+          relative_created_at?: string;
+          source?: string;
+          text: string;
+        }>
+      >;
+      engagements_by_publication: Record<string, Array<{ kind: string }>>;
+      raw_payloads: Record<string, { count: number; payloads: unknown[] }>;
+      summary: {
+        providers: {
+          instagram: { total_comments: number; total_engagements: number };
+        };
+        total_comments: number;
+      };
+    };
+    const comments = exported.comments_by_publication["instagram:shortcode:DY2ywueFXAj"];
+
+    expect(comments).toHaveLength(2);
+    expect(comments?.[0]).toMatchObject({
+      comment_id: "18199045243364553",
+      text: "look do dia pra ser top 1 😎❤️",
+      like_count: 2,
+      relative_created_at: "3h",
+      captured_at: "2026-05-28T10:00:00.000Z",
+      source: "Instagram DOM",
+    });
+    expect(comments?.[1]).toMatchObject({
+      comment_id: "17864617854572288",
+      parent_comment_id: "18199045243364553",
+      text: "@teamfighttacticsbrasil o top1 hoje tem nome e sobrenome 🤝",
+    });
+    expect(exported.summary.total_comments).toBe(2);
+    expect(exported.summary.providers.instagram.total_comments).toBe(2);
+    expect(exported.summary.providers.instagram.total_engagements).toBe(2);
+    expect(exported.engagements_by_publication["instagram:shortcode:DY2ywueFXAj"]).toHaveLength(2);
+    expect(exported.raw_payloads["instagram:InstagramDomComments"]?.count).toBe(2);
+  });
+
+  test("normaliza respostas de comentários vindas de child_comments do Instagram", () => {
+    const app = createHarness();
+
+    capture(
+      app,
+      "InstagramPageSSR",
+      instagramPostPagePayload,
+      "https://www.instagram.com/p/POSTSSR/",
+      "2026-05-28T11:00:00.000Z",
+      "instagram",
+    );
+    capture(
+      app,
+      "InstagramComments",
+      instagramChildCommentsPayload,
+      "https://www.instagram.com/p/POSTSSR/",
+      "2026-05-28T11:01:00.000Z",
+      "instagram",
+    );
+
+    const exported = app.sendMessage({ action: "GET_EXPORT" }) as {
+      comments_by_publication: Record<
+        string,
+        Array<{
+          comment_id: string;
+          parent_comment_id: null | string;
+          text: string;
+        }>
+      >;
+      engagements_by_publication: Record<string, Array<{ kind: string }>>;
+      summary: {
+        providers: {
+          instagram: { total_comments: number; total_engagements: number };
+        };
+        total_comments: number;
+      };
+    };
+    const comments = exported.comments_by_publication["instagram:394"];
+
+    expect(comments).toHaveLength(1);
+    expect(comments?.[0]).toMatchObject({
+      comment_id: "17864617854572288",
+      parent_comment_id: "18199045243364553",
+      text: "@teamfighttacticsbrasil o top1 hoje tem nome e sobrenome 🤝",
+    });
+    expect(exported.summary.total_comments).toBe(1);
+    expect(exported.summary.providers.instagram.total_comments).toBe(1);
+    expect(exported.summary.providers.instagram.total_engagements).toBe(1);
+    expect(exported.engagements_by_publication["instagram:394"]).toHaveLength(1);
+  });
+
+  test("migra comentários DOM visíveis quando o payload real resolve o shortcode do Instagram", () => {
+    const app = createHarness();
+
+    app.sendMessage({
+      action: "VISIBLE_COMMENTS",
+      provider: "instagram",
+      pageUrl: "https://www.instagram.com/p/POSTSSR/",
+      publication_shortcode: "POSTSSR",
+      captured_at: "2026-05-28T10:05:00.000Z",
+      comments: [
+        {
+          comment_id: "dom-comment-1",
+          publication_shortcode: "POSTSSR",
+          author: { username: "community_user" },
+          text: "comentário antes do payload",
+          like_count: 1,
+        },
+      ],
+    });
+
+    expect(
+      (
+        app.sendMessage({ action: "GET_EXPORT" }) as {
+          comments_by_publication: Record<string, unknown[]>;
+        }
+      ).comments_by_publication["instagram:POSTSSR"],
+    ).toBeUndefined();
+    expect(
+      (
+        app.sendMessage({ action: "GET_EXPORT" }) as {
+          comments_by_publication: Record<string, unknown[]>;
+        }
+      ).comments_by_publication["instagram:shortcode:POSTSSR"],
+    ).toHaveLength(1);
+
+    capture(
+      app,
+      "InstagramPageSSR",
+      instagramPostPagePayload,
+      "https://www.instagram.com/p/POSTSSR/",
+      "2026-05-28T10:06:00.000Z",
+      "instagram",
+    );
+
+    const exported = app.sendMessage({ action: "GET_EXPORT" }) as {
+      comments_by_publication: Record<string, Array<{ comment_id: string }>>;
+      engagements_by_publication: Record<string, Array<{ engagement_id: string }>>;
+    };
+
+    expect(exported.comments_by_publication["instagram:394"]).toHaveLength(1);
+    expect(exported.comments_by_publication["instagram:394"]?.[0]?.comment_id).toBe(
+      "dom-comment-1",
+    );
+    expect(exported.comments_by_publication["instagram:shortcode:POSTSSR"]).toBeUndefined();
+    expect(exported.engagements_by_publication["instagram:394"]).toHaveLength(1);
   });
 
   test("limpa dados capturados ao iniciar nova sessão de página sem apagar handle", () => {

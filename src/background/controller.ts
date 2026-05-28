@@ -21,7 +21,11 @@ import type {
   SocialProvider,
   SocialPublication,
 } from "../shared/domain";
-import type { CapturedPayloadMessage, RuntimeMessage } from "../shared/messages";
+import type {
+  CapturedPayloadMessage,
+  RuntimeMessage,
+  VisibleCommentsMessage,
+} from "../shared/messages";
 
 type AnyRecord = Record<string, any>;
 
@@ -39,6 +43,7 @@ export function createStore(trackedHandle = ""): BackgroundStore {
     engagementsByPublication: {},
     instagramPublicationIdsByShortcode: {},
     instagramVisiblePublications: [],
+    instagramVisibleComments: [],
     communityReplies: {},
     trackedProfiles: {},
     nextCaptureOrder: 1,
@@ -224,9 +229,24 @@ function sortPublications(publications: SocialPublication[]) {
 function storeComment(store: BackgroundStore, comment: SocialComment) {
   const key = publicationKey(comment.provider, comment.publication_id);
   const existing = store.commentsByPublication[key] || [];
-  if (!existing.some((item) => item.comment_id === comment.comment_id)) {
-    store.commentsByPublication[key] = [...existing, comment];
+  const existingIndex = existing.findIndex((item) => item.comment_id === comment.comment_id);
+  if (existingIndex === -1) {
+    store.commentsByPublication[key] = [
+      ...existing,
+      { ...comment, captured_at: comment.captured_at || new Date().toISOString() },
+    ];
+    return;
   }
+
+  store.commentsByPublication[key] = existing.map((item, index) =>
+    index === existingIndex
+      ? {
+          ...item,
+          ...comment,
+          captured_at: item.captured_at || comment.captured_at || new Date().toISOString(),
+        }
+      : item,
+  );
 }
 
 function storeEngagement(store: BackgroundStore, engagement: SocialEngagement) {
@@ -237,8 +257,30 @@ function storeEngagement(store: BackgroundStore, engagement: SocialEngagement) {
   }
 }
 
+function recordRawPayload(
+  store: BackgroundStore,
+  provider: SocialProvider,
+  endpoint: string,
+  payload: unknown,
+  timestamp: string,
+) {
+  const ep = getEndpointStore(store, provider, endpoint);
+  ep.payloads.push(payload);
+  ep.count++;
+  ep.lastSeen = timestamp;
+  store.lastUpdated = timestamp;
+}
+
 function resolveInstagramPublicationId(store: BackgroundStore, publicationId: string) {
-  return store.instagramPublicationIdsByShortcode[publicationId] || publicationId;
+  if (store.instagramPublicationIdsByShortcode[publicationId]) {
+    return store.instagramPublicationIdsByShortcode[publicationId];
+  }
+  if (publicationId && !/^\d+$/.test(publicationId)) {
+    const placeholderId = `shortcode:${publicationId}`;
+    store.instagramPublicationIdsByShortcode[publicationId] = placeholderId;
+    return placeholderId;
+  }
+  return publicationId;
 }
 
 function hasVisibleInstagramPublication(store: BackgroundStore, shortcode?: string) {
@@ -369,6 +411,98 @@ function clearCapturedData(store: BackgroundStore) {
   Object.assign(store, createStore(trackedHandle));
 }
 
+function processVisibleInstagramComments(
+  store: BackgroundStore,
+  request: VisibleCommentsMessage,
+  options: { recordRaw?: boolean } = { recordRaw: true },
+) {
+  if (!request.publication_shortcode) {
+    return;
+  }
+
+  if (options.recordRaw !== false) {
+    recordRawPayload(
+      store,
+      "instagram",
+      "InstagramDomComments",
+      {
+        page_url: request.pageUrl,
+        publication_shortcode: request.publication_shortcode,
+        captured_at: request.captured_at,
+        comments: request.comments,
+      },
+      request.captured_at,
+    );
+  }
+
+  const publicationId = resolveInstagramPublicationId(store, request.publication_shortcode);
+  const seen = new Set(
+    store.instagramVisibleComments.map(
+      (comment) => `${comment.publication_shortcode}:${comment.comment_id}`,
+    ),
+  );
+
+  for (const visibleComment of request.comments) {
+    const visibleKey = `${visibleComment.publication_shortcode}:${visibleComment.comment_id}`;
+    if (!seen.has(visibleKey)) {
+      seen.add(visibleKey);
+      store.instagramVisibleComments.push({
+        author: {
+          provider: "instagram",
+          provider_user_id: visibleComment.author.provider_user_id || "",
+          username: visibleComment.author.username,
+          name: visibleComment.author.name || visibleComment.author.username,
+          avatar_url: visibleComment.author.avatar_url || "",
+        },
+        captured_at: request.captured_at,
+        comment_id: visibleComment.comment_id,
+        like_count: visibleComment.like_count || 0,
+        parent_comment_id: visibleComment.parent_comment_id || null,
+        publication_shortcode: visibleComment.publication_shortcode,
+        relative_created_at: visibleComment.relative_created_at,
+        source: visibleComment.source || "Instagram DOM",
+        text: visibleComment.text,
+      });
+    }
+
+    const comment: SocialComment = {
+      provider: "instagram",
+      publication_id: publicationId,
+      captured_at: request.captured_at,
+      comment_id: visibleComment.comment_id,
+      author: {
+        provider: "instagram",
+        provider_user_id: visibleComment.author.provider_user_id || "",
+        username: visibleComment.author.username,
+        name: visibleComment.author.name || visibleComment.author.username,
+        avatar_url: visibleComment.author.avatar_url || "",
+      },
+      text: visibleComment.text,
+      created_at: "",
+      relative_created_at: visibleComment.relative_created_at,
+      like_count: visibleComment.like_count || 0,
+      parent_comment_id: visibleComment.parent_comment_id || null,
+      source: visibleComment.source || "Instagram DOM",
+    };
+
+    storeComment(store, comment);
+    storeEngagement(store, {
+      provider: "instagram",
+      publication_id: comment.publication_id,
+      kind: "comment",
+      engagement_id: publicationKey(
+        "instagram",
+        `${comment.publication_id}:comment:${comment.comment_id}`,
+      ),
+      actor: comment.author,
+      captured_at: request.captured_at,
+      engaged_at: null,
+    });
+  }
+
+  store.lastUpdated = request.captured_at;
+}
+
 function instagramShortcodeFromUrl(pageUrl?: string) {
   if (!pageUrl) return "";
   return pageUrl.match(/\/(?:p|reel|reels)\/([^/?#]+)/)?.[1] || "";
@@ -376,6 +510,7 @@ function instagramShortcodeFromUrl(pageUrl?: string) {
 
 function reprocessPayloads(store: BackgroundStore) {
   const visiblePublications = [...store.instagramVisiblePublications];
+  const visibleComments = [...store.instagramVisibleComments];
   const payloads = Object.values(store.endpoints).flatMap((endpoint) =>
     endpoint.payloads.map((payload) => ({
       action: "CAPTURED_PAYLOAD" as const,
@@ -391,6 +526,7 @@ function reprocessPayloads(store: BackgroundStore) {
   store.engagementsByPublication = {};
   store.instagramPublicationIdsByShortcode = {};
   store.instagramVisiblePublications = visiblePublications;
+  store.instagramVisibleComments = visibleComments;
   store.communityReplies = {};
   store.tweets = {};
   store.favoriters = {};
@@ -406,6 +542,42 @@ function reprocessPayloads(store: BackgroundStore) {
   for (const payload of payloads) {
     if (payload.provider === "x") processXCapture(store, payload);
     if (payload.provider === "instagram") processInstagramCapture(store, payload);
+  }
+
+  const commentsByBatch = new Map<string, VisibleCommentsMessage["comments"]>();
+  for (const comment of visibleComments) {
+    const key = comment.publication_shortcode;
+    const comments = commentsByBatch.get(key) || [];
+    comments.push({
+      author: {
+        provider_user_id: comment.author.provider_user_id,
+        username: comment.author.username,
+        name: comment.author.name,
+        avatar_url: comment.author.avatar_url,
+      },
+      comment_id: comment.comment_id,
+      like_count: comment.like_count,
+      parent_comment_id: comment.parent_comment_id,
+      publication_shortcode: comment.publication_shortcode,
+      relative_created_at: comment.relative_created_at,
+      source: comment.source,
+      text: comment.text,
+    });
+    commentsByBatch.set(key, comments);
+  }
+  for (const [shortcode, comments] of commentsByBatch) {
+    processVisibleInstagramComments(
+      store,
+      {
+        action: "VISIBLE_COMMENTS",
+        provider: "instagram",
+        pageUrl: `https://www.instagram.com/p/${shortcode}/`,
+        publication_shortcode: shortcode,
+        captured_at: new Date().toISOString(),
+        comments,
+      },
+      { recordRaw: false },
+    );
   }
 }
 
@@ -609,13 +781,13 @@ export function handleRuntimeMessage(
     return { success: true };
   }
 
+  if (request.action === "VISIBLE_COMMENTS") {
+    processVisibleInstagramComments(store, request);
+    return { success: true };
+  }
   const capture = normalizeCapture(request);
   if (capture) {
-    const ep = getEndpointStore(store, capture.provider, capture.endpoint);
-    ep.payloads.push(capture.payload);
-    ep.count++;
-    ep.lastSeen = capture.timestamp;
-    store.lastUpdated = capture.timestamp;
+    recordRawPayload(store, capture.provider, capture.endpoint, capture.payload, capture.timestamp);
 
     if (capture.provider === "x") processXCapture(store, capture);
     if (capture.provider === "instagram") processInstagramCapture(store, capture);

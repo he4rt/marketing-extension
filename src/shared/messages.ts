@@ -82,6 +82,29 @@ export type VisiblePublicationsMessage = {
   shortcodes: string[];
 };
 
+export type VisibleCommentsMessage = {
+  action: "VISIBLE_COMMENTS";
+  captured_at: string;
+  comments: Array<{
+    author: {
+      avatar_url?: string;
+      name?: string;
+      provider_user_id?: string;
+      username: string;
+    };
+    comment_id: string;
+    like_count?: number;
+    parent_comment_id?: null | string;
+    publication_shortcode: string;
+    relative_created_at?: string;
+    source?: string;
+    text: string;
+  }>;
+  pageUrl: string;
+  provider: Extract<SocialProvider, "instagram">;
+  publication_shortcode: string;
+};
+
 export type RuntimeMessage =
   | CapturedPayloadMessage
   | GraphqlCapturedMessage
@@ -95,7 +118,8 @@ export type RuntimeMessage =
   | GetAllRawMessage
   | ClearAllMessage
   | PageSessionStartedMessage
-  | VisiblePublicationsMessage;
+  | VisiblePublicationsMessage
+  | VisibleCommentsMessage;
 
 export type PageCapturedMessage = {
   endpoint: string;

@@ -18,12 +18,14 @@ import {
 
 const FEED_CONNECTION = "xdt_api__v1__feed__timeline__connection";
 const COMMENTS_CONNECTION = "xdt_api__v1__media__media_id__comments__connection";
+const CHILD_COMMENTS_CONNECTION =
+  "xdt_api__v1__media__media_id__comments__parent_comment_id__child_comments__connection";
 
 export function inferInstagramEndpointFromPayload(payload: unknown, fallback = "InstagramPayload") {
   const hasFeed = findFirstRecord(payload, (record) => !!record[FEED_CONNECTION]);
   if (hasFeed) return "InstagramFeedTimeline";
 
-  const hasComments = findFirstRecord(payload, (record) => !!record[COMMENTS_CONNECTION]);
+  const hasComments = findFirstRecord(payload, hasInstagramCommentsConnection);
   if (hasComments) return "InstagramComments";
 
   const media = findInstagramMedia(payload);
@@ -56,17 +58,19 @@ export function extractInstagramPublications(payload: unknown): SocialPublicatio
 
 export function extractInstagramComments(payload: unknown, pageUrl?: string): SocialComment[] {
   const publicationId = publicationIdFromPageUrl(pageUrl);
-  const commentsRecord = findFirstRecord(payload, (record) => !!record[COMMENTS_CONNECTION]);
-  const connection = commentsRecord?.[COMMENTS_CONNECTION] as AnyRecord | undefined;
-  const comments: SocialComment[] = [];
+  const comments = new Map<string, SocialComment>();
 
-  for (const edge of connection?.edges || []) {
-    const node = edge?.node;
-    const comment = commentToSocialComment(node, publicationId);
-    if (comment) comments.push(comment);
-  }
+  walkObjects(payload, (record) => {
+    for (const connection of instagramCommentConnections(record)) {
+      for (const edge of connection?.edges || []) {
+        const node = edge?.node;
+        const comment = commentToSocialComment(node, publicationId);
+        if (comment) comments.set(comment.comment_id, comment);
+      }
+    }
+  });
 
-  return comments;
+  return [...comments.values()];
 }
 
 export function extractInstagramLikers(payload: unknown, pageUrl?: string): SocialEngagement[] {
@@ -167,6 +171,19 @@ function userToActor(user: AnyRecord | null | undefined): SocialActor {
     is_verified: Boolean(user?.is_verified),
     following: Boolean(user?.friendship_status?.following),
   };
+}
+
+function hasInstagramCommentsConnection(record: AnyRecord) {
+  return instagramCommentConnections(record).length > 0;
+}
+
+function instagramCommentConnections(record: AnyRecord) {
+  return [COMMENTS_CONNECTION, CHILD_COMMENTS_CONNECTION]
+    .map((key) => record[key])
+    .filter((connection): connection is AnyRecord => {
+      if (!connection || typeof connection !== "object") return false;
+      return Array.isArray(connection.edges);
+    });
 }
 
 function findInstagramMedia(payload: unknown) {
