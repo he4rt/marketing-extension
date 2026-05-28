@@ -414,6 +414,14 @@ function processInstagramCapture(store: BackgroundStore, request: CapturedPayloa
   }
 
   if (request.endpoint.includes("Liker") || request.endpoint.includes("LikedBy")) {
+    const relationPublicationId = resolveInstagramPublicationId(store, pageShortcode);
+    if (
+      relationPublicationId &&
+      !instagramPublicationAllowedForComments(store, relationPublicationId)
+    ) {
+      return;
+    }
+
     for (const engagement of extractInstagramLikers(request.payload, request.pageUrl)) {
       engagement.publication_id = resolveInstagramPublicationId(store, engagement.publication_id);
       engagement.engagement_id = publicationKey(

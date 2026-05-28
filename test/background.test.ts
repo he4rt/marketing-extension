@@ -374,6 +374,41 @@ describe("background controller", () => {
     expect(exported.engagements_by_publication["instagram:391"]).toHaveLength(4);
   });
 
+  test("ignora curtidas do Instagram fora do handle rastreado", () => {
+    const app = createHarness();
+
+    app.sendMessage({ action: "SET_HANDLE", handle: "he4rtdevs" });
+    app.sendMessage({
+      action: "VISIBLE_PUBLICATIONS",
+      provider: "instagram",
+      pageUrl: "https://www.instagram.com/other_profile/",
+      shortcodes: ["OUTSCOPE"],
+      items: [
+        {
+          shortcode: "OUTSCOPE",
+          url: "https://www.instagram.com/p/OUTSCOPE/",
+          author: { username: "other_profile", name: "Other Profile" },
+        },
+      ],
+    });
+    capture(
+      app,
+      "InstagramLikers",
+      instagramLikersPayload,
+      "https://www.instagram.com/p/OUTSCOPE/liked_by/",
+      "2026-05-20T13:04:00.000Z",
+      "instagram",
+    );
+
+    const exported = app.sendMessage({ action: "GET_EXPORT" }) as {
+      engagements_by_publication: Record<string, unknown[]>;
+      summary: { total_engagements: number };
+    };
+
+    expect(exported.engagements_by_publication["instagram:shortcode:OUTSCOPE"]).toBeUndefined();
+    expect(exported.summary.total_engagements).toBe(0);
+  });
+
   test("captura publicação principal renderizada por SSR e vincula comentários pelo shortcode", () => {
     const app = createHarness();
 

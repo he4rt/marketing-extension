@@ -1,13 +1,14 @@
 import type { PageCapturedMessage, PageGraphqlMessage } from "../shared/messages";
 
 const sentInstagramScripts = new Set<string>();
-const pageSessionKey = `${Date.now()}:${Math.random().toString(36).slice(2)}:${location.href}`;
+let lastAnnouncedPageUrl = "";
 let visibleOrderTimer: number | null = null;
 let lastVisibleOrderSignature = "";
 let visibleCommentsTimer: number | null = null;
 let lastVisibleCommentsSignature = "";
 let scanTimerA: number | null = null;
 let scanTimerB: number | null = null;
+let urlCheckTimer: number | null = null;
 let extensionContextActive = true;
 let instagramObserver: MutationObserver | null = null;
 
@@ -17,10 +18,12 @@ function stopAfterInvalidContext() {
   if (visibleCommentsTimer) clearTimeout(visibleCommentsTimer);
   if (scanTimerA) clearTimeout(scanTimerA);
   if (scanTimerB) clearTimeout(scanTimerB);
+  if (urlCheckTimer) clearInterval(urlCheckTimer);
   visibleOrderTimer = null;
   visibleCommentsTimer = null;
   scanTimerA = null;
   scanTimerB = null;
+  urlCheckTimer = null;
   instagramObserver?.disconnect();
   window.removeEventListener("message", handlePageMessage);
 }
@@ -60,18 +63,57 @@ function currentProvider() {
   return null;
 }
 
+function createPageSessionKey(url: string) {
+  return `${Date.now()}:${Math.random().toString(36).slice(2)}:${url}`;
+}
+
 function announcePageSession() {
   const provider = currentProvider();
   if (!provider) return;
+  const pageUrl = location.href;
+  lastAnnouncedPageUrl = pageUrl;
   sendRuntimeMessage({
     action: "PAGE_SESSION_STARTED",
     provider,
-    pageUrl: location.href,
-    sessionKey: pageSessionKey,
+    pageUrl,
+    sessionKey: createPageSessionKey(pageUrl),
   });
 }
 
 announcePageSession();
+
+function handleUrlChange() {
+  if (!extensionContextActive || location.href === lastAnnouncedPageUrl) return;
+  sentInstagramScripts.clear();
+  lastVisibleOrderSignature = "";
+  lastVisibleCommentsSignature = "";
+  announcePageSession();
+  if (location.hostname.includes("instagram.com")) {
+    scheduleInstagramScan();
+  }
+}
+
+function installSpaNavigationObserver() {
+  const wrapHistoryMethod = (method: "pushState" | "replaceState") => {
+    const original = history[method];
+    history[method] = function patchedHistoryMethod(
+      this: History,
+      ...args: Parameters<History[typeof method]>
+    ) {
+      const result = original.apply(this, args);
+      window.setTimeout(handleUrlChange, 0);
+      return result;
+    };
+  };
+
+  wrapHistoryMethod("pushState");
+  wrapHistoryMethod("replaceState");
+  window.addEventListener("popstate", () => window.setTimeout(handleUrlChange, 0));
+}
+
+installSpaNavigationObserver();
+
+urlCheckTimer = window.setInterval(handleUrlChange, 750);
 
 function handlePageMessage(event: MessageEvent<PageCapturedMessage | PageGraphqlMessage>) {
   if (event.source !== window || !extensionContextActive) return;
@@ -534,21 +576,21 @@ function scheduleVisibleComments() {
   }, 500);
 }
 
-if (location.hostname.includes("instagram.com")) {
-  const scheduleScan = () => {
-    if (!extensionContextActive) return;
-    if (scanTimerA) clearTimeout(scanTimerA);
-    if (scanTimerB) clearTimeout(scanTimerB);
-    scanTimerA = window.setTimeout(scanInstagramSsrScripts, 500);
-    scanTimerB = window.setTimeout(scanInstagramSsrScripts, 2000);
-    scheduleVisibleOrder();
-    scheduleVisibleComments();
-  };
+function scheduleInstagramScan() {
+  if (!extensionContextActive) return;
+  if (scanTimerA) clearTimeout(scanTimerA);
+  if (scanTimerB) clearTimeout(scanTimerB);
+  scanTimerA = window.setTimeout(scanInstagramSsrScripts, 500);
+  scanTimerB = window.setTimeout(scanInstagramSsrScripts, 2000);
+  scheduleVisibleOrder();
+  scheduleVisibleComments();
+}
 
+if (location.hostname.includes("instagram.com")) {
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", scheduleScan, { once: true });
+    document.addEventListener("DOMContentLoaded", scheduleInstagramScan, { once: true });
   } else {
-    scheduleScan();
+    scheduleInstagramScan();
   }
 
   instagramObserver = new MutationObserver((mutations) => {
@@ -563,7 +605,8 @@ if (location.hostname.includes("instagram.com")) {
         ),
       )
     ) {
-      scheduleScan();
+      handleUrlChange();
+      scheduleInstagramScan();
     }
   });
   instagramObserver.observe(document.documentElement, { childList: true, subtree: true });
