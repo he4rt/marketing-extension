@@ -18,6 +18,8 @@ export type GraphqlCapturedMessage = Omit<CapturedPayloadMessage, "action" | "pr
 export type SetHandleMessage = {
   action: "SET_HANDLE";
   handle: string;
+  pageUrl?: string;
+  provider?: null | SocialProvider;
 };
 
 export type GetHandleMessage = {
@@ -26,18 +28,22 @@ export type GetHandleMessage = {
 
 export type GetPublicationsMessage = {
   action: "GET_PUBLICATIONS";
+  provider?: null | SocialProvider;
 };
 
 export type GetTweetsMessage = {
   action: "GET_TWEETS";
+  provider?: null | SocialProvider;
 };
 
 export type GetExportMessage = {
   action: "GET_EXPORT";
+  provider?: null | SocialProvider;
 };
 
 export type GetEndpointsMessage = {
   action: "GET_ENDPOINTS";
+  provider?: null | SocialProvider;
 };
 
 export type GetEndpointPayloadsMessage = {
@@ -47,6 +53,7 @@ export type GetEndpointPayloadsMessage = {
 
 export type GetAllRawMessage = {
   action: "GET_ALL_RAW";
+  provider?: null | SocialProvider;
 };
 
 export type ClearAllMessage = {
@@ -58,6 +65,12 @@ export type PageSessionStartedMessage = {
   pageUrl: string;
   provider: SocialProvider;
   sessionKey: string;
+};
+
+export type SetActiveProviderMessage = {
+  action: "SET_ACTIVE_PROVIDER";
+  pageUrl?: string;
+  provider: null | SocialProvider;
 };
 
 export type VisiblePublicationsMessage = {
@@ -118,6 +131,7 @@ export type RuntimeMessage =
   | GetAllRawMessage
   | ClearAllMessage
   | PageSessionStartedMessage
+  | SetActiveProviderMessage
   | VisiblePublicationsMessage
   | VisibleCommentsMessage;
 

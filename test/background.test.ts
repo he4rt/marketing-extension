@@ -435,6 +435,18 @@ describe("background controller", () => {
       provider: "instagram",
       pageUrl: "https://www.instagram.com/",
       shortcodes: ["REEL456", "ABC123"],
+      items: [
+        {
+          author: { username: "he4rtdevs" },
+          shortcode: "REEL456",
+          url: "https://www.instagram.com/reel/REEL456/",
+        },
+        {
+          author: { username: "he4rtdevs" },
+          shortcode: "ABC123",
+          url: "https://www.instagram.com/p/ABC123/",
+        },
+      ],
     });
 
     const response = app.sendMessage({ action: "GET_PUBLICATIONS" }) as {
@@ -451,7 +463,6 @@ describe("background controller", () => {
   test("cria publicações visíveis do Instagram antes do payload e depois enriquece pelo shortcode", () => {
     const app = createHarness();
 
-    app.sendMessage({ action: "SET_HANDLE", handle: "outro_usuario" });
     app.sendMessage({
       action: "VISIBLE_PUBLICATIONS",
       provider: "instagram",
@@ -530,10 +541,58 @@ describe("background controller", () => {
     expect(enriched.publications[1]?.text).toContain("Laravel");
   });
 
+  test("respeita o filtro de handle nas publicações visíveis e nos payloads do Instagram", () => {
+    const app = createHarness();
+
+    app.sendMessage({ action: "SET_HANDLE", handle: "he4rtdevs" });
+    app.sendMessage({
+      action: "VISIBLE_PUBLICATIONS",
+      provider: "instagram",
+      pageUrl: "https://www.instagram.com/",
+      shortcodes: ["ABC123", "OTHER999"],
+      items: [
+        {
+          author: { username: "he4rtdevs" },
+          shortcode: "ABC123",
+          text: "Post da He4rt",
+          url: "https://www.instagram.com/p/ABC123/",
+        },
+        {
+          author: { username: "outro_usuario" },
+          shortcode: "OTHER999",
+          text: "Post de outro perfil",
+          url: "https://www.instagram.com/p/OTHER999/",
+        },
+      ],
+    });
+    capture(
+      app,
+      "InstagramFeedTimeline",
+      instagramFeedPayload,
+      "https://www.instagram.com/",
+      "2026-05-20T15:45:00.000Z",
+      "instagram",
+    );
+
+    const response = app.sendMessage({ action: "GET_PUBLICATIONS", provider: "instagram" }) as {
+      publications: Array<{ author: { username: string }; shortcode?: string }>;
+    };
+
+    expect(response.publications.map((publication) => publication.shortcode)).toEqual([
+      "ABC123",
+      "REEL456",
+    ]);
+    expect(
+      response.publications.every(
+        (publication) => publication.author.username.toLowerCase() === "he4rtdevs",
+      ),
+    ).toBe(true);
+  });
+
   test("captura comentários visíveis do Instagram pelo DOM e exporta em comments_by_publication", () => {
     const app = createHarness();
 
-    app.sendMessage({ action: "SET_HANDLE", handle: "viqsm" });
+    app.sendMessage({ action: "SET_HANDLE", handle: "he4rtdevs" });
     app.sendMessage({
       action: "VISIBLE_PUBLICATIONS",
       provider: "instagram",
@@ -541,6 +600,7 @@ describe("background controller", () => {
       shortcodes: ["DY2ywueFXAj"],
       items: [
         {
+          author: { username: "he4rtdevs" },
           shortcode: "DY2ywueFXAj",
           url: "https://www.instagram.com/p/DY2ywueFXAj/",
           mediaType: "carousel",
@@ -790,5 +850,120 @@ describe("background controller", () => {
       (app.sendMessage({ action: "GET_ENDPOINTS" }) as { endpoints: Record<string, unknown> })
         .endpoints,
     ).toEqual({});
+  });
+
+  test("alterna provider ativo pelo popup descartando dados do contexto anterior", () => {
+    const app = createHarness();
+
+    app.sendMessage({ action: "SET_HANDLE", handle: "he4rtdevs" });
+    app.sendMessage({
+      action: "SET_ACTIVE_PROVIDER",
+      provider: "instagram",
+      pageUrl: "https://www.instagram.com/",
+    });
+    capture(
+      app,
+      "InstagramFeedTimeline",
+      instagramFeedPayload,
+      "https://www.instagram.com/",
+      "2026-05-20T17:00:00.000Z",
+      "instagram",
+    );
+
+    expect(
+      (
+        app.sendMessage({ action: "GET_PUBLICATIONS", provider: "instagram" }) as {
+          publications: unknown[];
+        }
+      ).publications,
+    ).toHaveLength(2);
+
+    app.sendMessage({
+      action: "SET_ACTIVE_PROVIDER",
+      provider: "x",
+      pageUrl: "https://x.com/He4rtDevs",
+    });
+    capture(
+      app,
+      "UserTweets",
+      userTweetsPayload,
+      "https://x.com/He4rtDevs",
+      "2026-05-20T17:01:00.000Z",
+      "x",
+    );
+
+    expect(app.sendMessage({ action: "GET_HANDLE" })).toEqual({ handle: "he4rtdevs" });
+    expect(
+      (
+        app.sendMessage({ action: "GET_PUBLICATIONS", provider: "x" }) as {
+          publications: unknown[];
+        }
+      ).publications,
+    ).toHaveLength(5);
+    expect(
+      (
+        app.sendMessage({ action: "GET_ENDPOINTS", provider: "x" }) as {
+          endpoints: Record<string, unknown>;
+        }
+      ).endpoints,
+    ).toHaveProperty("x:UserTweets");
+
+    app.sendMessage({
+      action: "SET_ACTIVE_PROVIDER",
+      provider: "instagram",
+      pageUrl: "https://www.instagram.com/",
+    });
+
+    expect(
+      (
+        app.sendMessage({ action: "GET_PUBLICATIONS", provider: "instagram" }) as {
+          publications: unknown[];
+        }
+      ).publications,
+    ).toHaveLength(0);
+  });
+
+  test("recarregar uma página limpa todos os dados do contexto anterior", () => {
+    const app = createHarness();
+
+    app.sendMessage({ action: "SET_HANDLE", handle: "he4rtdevs" });
+    capture(
+      app,
+      "InstagramFeedTimeline",
+      instagramFeedPayload,
+      "https://www.instagram.com/",
+      "2026-05-20T18:00:00.000Z",
+      "instagram",
+    );
+    capture(
+      app,
+      "UserTweets",
+      userTweetsPayload,
+      "https://x.com/He4rtDevs",
+      "2026-05-20T18:01:00.000Z",
+      "x",
+    );
+
+    app.sendMessage({
+      action: "PAGE_SESSION_STARTED",
+      provider: "instagram",
+      pageUrl: "https://www.instagram.com/p/NEWPAGE/",
+      sessionKey: "instagram-session-2",
+    });
+
+    expect(
+      (
+        app.sendMessage({ action: "GET_PUBLICATIONS", provider: "instagram" }) as {
+          publications: unknown[];
+        }
+      ).publications,
+    ).toHaveLength(0);
+    expect(
+      (
+        app.sendMessage({ action: "GET_PUBLICATIONS", provider: "x" }) as {
+          publications: unknown[];
+        }
+      ).publications,
+    ).toHaveLength(0);
   });
 });

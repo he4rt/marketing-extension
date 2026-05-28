@@ -115,6 +115,8 @@ export type EndpointStore = {
 };
 
 export type BackgroundStore = {
+  activeProvider: null | SocialProvider;
+  archivedEndpoints: Record<string, EndpointStore>;
   commentsByPublication: Record<string, SocialComment[]>;
   communityReplies: Record<string, SocialPublication>;
   endpoints: Record<string, EndpointStore>;
@@ -149,6 +151,8 @@ export type BackgroundStore = {
   lastUpdated: null | string;
   nextCaptureOrder: number;
   pageSessionKey: string;
+  pageSessionKeys: Partial<Record<SocialProvider, string>>;
+  providerPageUrls: Partial<Record<SocialProvider, string>>;
   publications: Record<string, SocialPublication>;
   trackedHandle: string;
   trackedProfiles: Partial<Record<SocialProvider, TrackedProfile>>;

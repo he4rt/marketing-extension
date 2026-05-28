@@ -183,13 +183,20 @@ function collectVisibleInstagramPublications() {
 
   const currentShortcode = currentInstagramShortcode();
   if (currentShortcode) {
+    const mediaRoot = document.querySelector("article") || document.querySelector("main");
+    const author = inferVisibleInstagramAuthor(mediaRoot);
+    const text = inferVisibleInstagramText(null, mediaRoot, author.username);
+    const metrics = inferVisibleInstagramMetrics(mediaRoot);
     seen.add(currentShortcode);
     items.push({
+      author,
       mediaType:
         location.pathname.includes("/reel/") || location.pathname.includes("/reels/")
           ? "reel"
           : "unknown",
+      metrics,
       shortcode: currentShortcode,
+      text,
       url: `https://www.instagram.com${location.pathname}`,
     });
   }
@@ -233,7 +240,7 @@ function inferVisibleInstagramAuthor(root: Element | null) {
 }
 
 function inferVisibleInstagramText(
-  anchor: HTMLAnchorElement,
+  anchor: HTMLAnchorElement | null,
   root: Element | null,
   username?: string,
 ) {
@@ -243,9 +250,9 @@ function inferVisibleInstagramText(
   if (postImageAlt) return postImageAlt;
 
   const rootText = (root?.textContent || "").replace(/\s+/g, " ").trim();
-  if (!rootText || !username) return anchor.getAttribute("aria-label") || "";
+  if (!rootText || !username) return anchor?.getAttribute("aria-label") || "";
   const repeatedAuthor = rootText.lastIndexOf(username);
-  if (repeatedAuthor === -1) return anchor.getAttribute("aria-label") || "";
+  if (repeatedAuthor === -1) return anchor?.getAttribute("aria-label") || "";
   return rootText
     .slice(repeatedAuthor + username.length)
     .replace(/\bmore$/i, "")

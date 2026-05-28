@@ -11,6 +11,8 @@ function mergeStore(target: BackgroundStore, persisted: Partial<BackgroundStore>
   Object.assign(target, {
     ...createStore(),
     ...persisted,
+    activeProvider: persisted.activeProvider || null,
+    archivedEndpoints: persisted.archivedEndpoints || {},
     endpoints: persisted.endpoints || {},
     publications: persisted.publications || {},
     commentsByPublication: persisted.commentsByPublication || {},
@@ -18,6 +20,8 @@ function mergeStore(target: BackgroundStore, persisted: Partial<BackgroundStore>
     instagramPublicationIdsByShortcode: persisted.instagramPublicationIdsByShortcode || {},
     instagramVisiblePublications: persisted.instagramVisiblePublications || [],
     instagramVisibleComments: persisted.instagramVisibleComments || [],
+    pageSessionKeys: persisted.pageSessionKeys || {},
+    providerPageUrls: persisted.providerPageUrls || {},
     communityReplies: persisted.communityReplies || {},
     trackedProfiles: persisted.trackedProfiles || {},
     tweets: persisted.tweets || {},
@@ -59,6 +63,7 @@ function shouldPersist(request: RuntimeMessage) {
     request.action === "CAPTURED_PAYLOAD" ||
     request.action === "GRAPHQL_CAPTURED" ||
     request.action === "SET_HANDLE" ||
+    request.action === "SET_ACTIVE_PROVIDER" ||
     request.action === "CLEAR_ALL" ||
     request.action === "PAGE_SESSION_STARTED" ||
     request.action === "VISIBLE_PUBLICATIONS" ||
@@ -89,6 +94,7 @@ chrome.runtime.onMessage.addListener((request: RuntimeMessage, _sender, sendResp
       if (
         request.action === "CAPTURED_PAYLOAD" ||
         request.action === "GRAPHQL_CAPTURED" ||
+        request.action === "SET_ACTIVE_PROVIDER" ||
         request.action === "PAGE_SESSION_STARTED" ||
         request.action === "VISIBLE_PUBLICATIONS" ||
         request.action === "VISIBLE_COMMENTS"

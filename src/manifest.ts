@@ -3,7 +3,7 @@ const manifest = {
   name: "He4rt Analytics",
   version: "1.0.0",
   description: "Captura engajamento social da comunidade He4rt Developers",
-  permissions: ["storage", "unlimitedStorage"],
+  permissions: ["storage", "tabs", "unlimitedStorage"],
   host_permissions: ["https://x.com/*", "https://twitter.com/*", "https://www.instagram.com/*"],
   background: {
     service_worker: "background.js",

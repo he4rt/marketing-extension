@@ -36,6 +36,8 @@ export type MessageContext = {
 
 export function createStore(trackedHandle = ""): BackgroundStore {
   return {
+    activeProvider: null,
+    archivedEndpoints: {},
     trackedHandle,
     endpoints: {},
     publications: {},
@@ -52,6 +54,8 @@ export function createStore(trackedHandle = ""): BackgroundStore {
     favoriters: {},
     accountInfo: null,
     lastUpdated: null,
+    pageSessionKeys: {},
+    providerPageUrls: {},
   };
 }
 
@@ -283,11 +287,27 @@ function resolveInstagramPublicationId(store: BackgroundStore, publicationId: st
   return publicationId;
 }
 
-function hasVisibleInstagramPublication(store: BackgroundStore, shortcode?: string) {
-  if (!shortcode) return false;
+function visibleInstagramItemsForHandle(
+  store: BackgroundStore,
+  items: BackgroundStore["instagramVisiblePublications"],
+) {
+  const handle = store.trackedHandle.trim().toLowerCase();
+  if (!handle) return items;
+  return items.filter((item) => (item.author?.username || "").toLowerCase() === handle);
+}
+
+function instagramPublicationAllowedForComments(store: BackgroundStore, shortcode: string) {
+  const handle = store.trackedHandle.trim().toLowerCase();
+  if (!handle) return true;
   const publicationId = store.instagramPublicationIdsByShortcode[shortcode];
-  if (!publicationId) return false;
-  return Boolean(store.publications[publicationKey("instagram", publicationId)]?.visible_order);
+  const publication =
+    store.publications[publicationKey("instagram", shortcode)] ||
+    (publicationId && store.publications[publicationKey("instagram", publicationId)]);
+  if (publication) return publication.author.username.toLowerCase() === handle;
+  return store.instagramVisiblePublications.some(
+    (item) =>
+      item.shortcode === shortcode && (item.author?.username || "").toLowerCase() === handle,
+  );
 }
 
 function processXCapture(store: BackgroundStore, request: CapturedPayloadMessage) {
@@ -366,11 +386,7 @@ function processInstagramCapture(store: BackgroundStore, request: CapturedPayloa
     if (publication.shortcode && publication.shortcode === pageShortcode) {
       publication.capture_priority = 0;
     }
-    if (
-      !handle ||
-      publication.author.username.toLowerCase() === handle ||
-      hasVisibleInstagramPublication(store, publication.shortcode)
-    ) {
+    if (!handle || publication.author.username.toLowerCase() === handle) {
       storePublication(store, publication);
       if (publication.author.username.toLowerCase() === handle) {
         store.trackedProfiles.instagram = profileFromPublication(publication);
@@ -380,6 +396,7 @@ function processInstagramCapture(store: BackgroundStore, request: CapturedPayloa
 
   for (const comment of extractInstagramComments(request.payload, request.pageUrl)) {
     comment.publication_id = resolveInstagramPublicationId(store, comment.publication_id);
+    if (!instagramPublicationAllowedForComments(store, comment.publication_id)) continue;
     storeComment(store, comment);
     storeEngagement(store, {
       provider: "instagram",
@@ -409,6 +426,91 @@ function processInstagramCapture(store: BackgroundStore, request: CapturedPayloa
 function clearCapturedData(store: BackgroundStore) {
   const trackedHandle = store.trackedHandle;
   Object.assign(store, createStore(trackedHandle));
+  store.lastUpdated = new Date().toISOString();
+}
+
+function clearDisplayedData(store: BackgroundStore) {
+  const trackedHandle = store.trackedHandle;
+  const activeProvider = store.activeProvider;
+  const pageSessionKeys = store.pageSessionKeys;
+  const providerPageUrls = store.providerPageUrls;
+  const archivedEndpoints = { ...store.archivedEndpoints, ...store.endpoints };
+  Object.assign(store, createStore(trackedHandle));
+  store.activeProvider = activeProvider;
+  store.pageSessionKeys = pageSessionKeys;
+  store.providerPageUrls = providerPageUrls;
+  store.archivedEndpoints = archivedEndpoints;
+  store.lastUpdated = new Date().toISOString();
+}
+
+function clearNormalizedData(store: BackgroundStore) {
+  store.publications = {};
+  store.commentsByPublication = {};
+  store.engagementsByPublication = {};
+  store.instagramPublicationIdsByShortcode = {};
+  store.instagramVisiblePublications = [];
+  store.instagramVisibleComments = [];
+  store.communityReplies = {};
+  store.tweets = {};
+  store.favoriters = {};
+  store.accountInfo = null;
+  store.trackedProfiles = {};
+  store.nextCaptureOrder = 1;
+}
+
+function hasCapturedData(store: BackgroundStore) {
+  return (
+    Object.keys(store.endpoints).length > 0 ||
+    Object.keys(store.publications).length > 0 ||
+    Object.keys(store.commentsByPublication).length > 0 ||
+    Object.keys(store.engagementsByPublication).length > 0 ||
+    store.instagramVisiblePublications.length > 0 ||
+    store.instagramVisibleComments.length > 0 ||
+    Object.keys(store.tweets).length > 0 ||
+    Object.keys(store.communityReplies).length > 0 ||
+    Object.keys(store.favoriters).length > 0
+  );
+}
+
+function hasCapturedDataOutsideProvider(store: BackgroundStore, provider: SocialProvider) {
+  return (
+    Object.values(store.endpoints).some((endpoint) => endpoint.provider !== provider) ||
+    Object.values(store.publications).some((publication) => publication.provider !== provider) ||
+    Object.values(store.commentsByPublication)
+      .flat()
+      .some((comment) => comment.provider !== provider) ||
+    Object.values(store.engagementsByPublication)
+      .flat()
+      .some((engagement) => engagement.provider !== provider)
+  );
+}
+
+function activateContext(
+  store: BackgroundStore,
+  provider: null | SocialProvider,
+  pageUrl?: string,
+) {
+  const previousUrl = provider ? store.providerPageUrls[provider] : "";
+  const switchingProvider = Boolean(
+    provider && store.activeProvider && store.activeProvider !== provider,
+  );
+  const switchingUrl = Boolean(provider && pageUrl && previousUrl && previousUrl !== pageUrl);
+  const staleHydratedContext = Boolean(
+    provider && !store.activeProvider && hasCapturedDataOutsideProvider(store, provider),
+  );
+
+  if (
+    (switchingProvider || switchingUrl || staleHydratedContext || !provider) &&
+    hasCapturedData(store)
+  ) {
+    clearCapturedData(store);
+  }
+
+  store.activeProvider = provider;
+  if (provider && pageUrl) {
+    store.providerPageUrls[provider] = pageUrl;
+  }
+  store.lastUpdated = new Date().toISOString();
 }
 
 function processVisibleInstagramComments(
@@ -436,6 +538,10 @@ function processVisibleInstagramComments(
   }
 
   const publicationId = resolveInstagramPublicationId(store, request.publication_shortcode);
+  const shouldStoreNormalized = instagramPublicationAllowedForComments(
+    store,
+    request.publication_shortcode,
+  );
   const seen = new Set(
     store.instagramVisibleComments.map(
       (comment) => `${comment.publication_shortcode}:${comment.comment_id}`,
@@ -464,6 +570,8 @@ function processVisibleInstagramComments(
         text: visibleComment.text,
       });
     }
+
+    if (!shouldStoreNormalized) continue;
 
     const comment: SocialComment = {
       provider: "instagram",
@@ -511,31 +619,29 @@ function instagramShortcodeFromUrl(pageUrl?: string) {
 function reprocessPayloads(store: BackgroundStore) {
   const visiblePublications = [...store.instagramVisiblePublications];
   const visibleComments = [...store.instagramVisibleComments];
-  const payloads = Object.values(store.endpoints).flatMap((endpoint) =>
+  const providerPageUrls = { ...store.providerPageUrls };
+  const pageSessionKeys = { ...store.pageSessionKeys };
+  const archivedEndpoints = { ...store.archivedEndpoints };
+  const cachedEndpoints = { ...store.archivedEndpoints, ...store.endpoints };
+  const payloads = Object.values(cachedEndpoints).flatMap((endpoint) =>
     endpoint.payloads.map((payload) => ({
       action: "CAPTURED_PAYLOAD" as const,
       provider: endpoint.provider,
       endpoint: endpoint.endpoint,
+      pageUrl: providerPageUrls[endpoint.provider],
       payload,
       timestamp: endpoint.lastSeen || new Date().toISOString(),
     })),
   );
 
-  store.publications = {};
-  store.commentsByPublication = {};
-  store.engagementsByPublication = {};
-  store.instagramPublicationIdsByShortcode = {};
+  clearNormalizedData(store);
   store.instagramVisiblePublications = visiblePublications;
   store.instagramVisibleComments = visibleComments;
-  store.communityReplies = {};
-  store.tweets = {};
-  store.favoriters = {};
-  store.accountInfo = null;
-  store.trackedProfiles = {};
-  store.nextCaptureOrder = 1;
-  store.pageSessionKey = "";
+  store.pageSessionKeys = pageSessionKeys;
+  store.providerPageUrls = providerPageUrls;
+  store.archivedEndpoints = archivedEndpoints;
 
-  visiblePublications.forEach((item, index) => {
+  visibleInstagramItemsForHandle(store, visiblePublications).forEach((item, index) => {
     storePublication(store, instagramPlaceholderPublication(item, index + 1));
   });
 
@@ -699,6 +805,61 @@ function buildExportJSON(store: BackgroundStore): ExportJSON {
   };
 }
 
+function storeForProvider(store: BackgroundStore, provider: null | SocialProvider) {
+  if (!provider) return store;
+  const scoped = createStore(store.trackedHandle);
+  scoped.activeProvider = store.activeProvider;
+  scoped.lastUpdated = store.lastUpdated;
+  scoped.nextCaptureOrder = store.nextCaptureOrder;
+  scoped.pageSessionKey = store.pageSessionKey;
+  scoped.pageSessionKeys = store.pageSessionKeys;
+  scoped.providerPageUrls = store.providerPageUrls;
+  scoped.publications = Object.fromEntries(
+    Object.entries(store.publications).filter(
+      ([, publication]) => publication.provider === provider,
+    ),
+  );
+  scoped.endpoints = Object.fromEntries(
+    Object.entries(store.endpoints).filter(([, endpoint]) => endpoint.provider === provider),
+  );
+  scoped.commentsByPublication = Object.fromEntries(
+    Object.entries(store.commentsByPublication)
+      .map(([key, comments]) => ({
+        key,
+        comments: comments.filter((comment) => comment.provider === provider),
+      }))
+      .filter(({ comments }) => comments.length)
+      .map(({ key, comments }) => [key, comments]),
+  );
+  scoped.engagementsByPublication = Object.fromEntries(
+    Object.entries(store.engagementsByPublication)
+      .map(([key, engagements]) => ({
+        key,
+        engagements: engagements.filter((engagement) => engagement.provider === provider),
+      }))
+      .filter(({ engagements }) => engagements.length)
+      .map(({ key, engagements }) => [key, engagements]),
+  );
+  scoped.trackedProfiles = store.trackedProfiles[provider]
+    ? { [provider]: store.trackedProfiles[provider] }
+    : {};
+
+  if (provider === "instagram") {
+    scoped.instagramPublicationIdsByShortcode = store.instagramPublicationIdsByShortcode;
+    scoped.instagramVisiblePublications = store.instagramVisiblePublications;
+    scoped.instagramVisibleComments = store.instagramVisibleComments;
+  }
+
+  if (provider === "x") {
+    scoped.communityReplies = store.communityReplies;
+    scoped.tweets = store.tweets;
+    scoped.favoriters = store.favoriters;
+    scoped.accountInfo = store.accountInfo;
+  }
+
+  return scoped;
+}
+
 function emptyProviderSummary() {
   return {
     total_publications: 0,
@@ -731,10 +892,24 @@ export function handleRuntimeMessage(
   request: RuntimeMessage,
   context: MessageContext = {},
 ): unknown {
+  if (request.action === "SET_ACTIVE_PROVIDER") {
+    const previousProvider = store.activeProvider;
+    activateContext(store, request.provider, request.pageUrl);
+    if (previousProvider !== request.provider) {
+      context.log?.(`[Social Interceptor] provider ativo: ${request.provider || "nenhum"}`);
+    }
+    return { activeProvider: store.activeProvider, success: true };
+  }
+
   if (request.action === "PAGE_SESSION_STARTED") {
-    if (store.pageSessionKey !== request.sessionKey) {
+    activateContext(store, request.provider, request.pageUrl);
+    store.providerPageUrls[request.provider] = request.pageUrl;
+    if (store.pageSessionKeys[request.provider] !== request.sessionKey) {
       clearCapturedData(store);
+      store.activeProvider = request.provider;
+      store.providerPageUrls[request.provider] = request.pageUrl;
       store.pageSessionKey = request.sessionKey;
+      store.pageSessionKeys[request.provider] = request.sessionKey;
       store.lastUpdated = new Date().toISOString();
       context.log?.(`[Social Interceptor] nova sessão de página: ${request.pageUrl}`);
     }
@@ -749,8 +924,9 @@ export function handleRuntimeMessage(
           url: `https://www.instagram.com/p/${shortcode}/`,
         }));
 
-    store.instagramVisiblePublications = items;
-    items.forEach((item, index) => {
+    const filteredItems = visibleInstagramItemsForHandle(store, items);
+    store.instagramVisiblePublications = filteredItems;
+    filteredItems.forEach((item, index) => {
       const publicationId =
         store.instagramPublicationIdsByShortcode[item.shortcode] || `shortcode:${item.shortcode}`;
       const key = publicationKey("instagram", publicationId);
@@ -787,6 +963,7 @@ export function handleRuntimeMessage(
   }
   const capture = normalizeCapture(request);
   if (capture) {
+    if (capture.pageUrl) store.providerPageUrls[capture.provider] = capture.pageUrl;
     recordRawPayload(store, capture.provider, capture.endpoint, capture.payload, capture.timestamp);
 
     if (capture.provider === "x") processXCapture(store, capture);
@@ -799,6 +976,10 @@ export function handleRuntimeMessage(
   }
 
   if (request.action === "SET_HANDLE") {
+    const provider = request.provider ?? store.activeProvider;
+    if (provider || request.pageUrl) {
+      activateContext(store, provider, request.pageUrl);
+    }
     store.trackedHandle = request.handle;
     context.persistHandle?.(request.handle);
     reprocessPayloads(store);
@@ -814,26 +995,50 @@ export function handleRuntimeMessage(
   }
 
   if (request.action === "GET_PUBLICATIONS" || request.action === "GET_TWEETS") {
-    return {
-      publications: sortPublications(Object.values(store.publications)),
-      commentsCount: Object.values(store.commentsByPublication).flat().length,
-      engagementsCount: Object.values(store.engagementsByPublication).flat().length,
-      tweets: Object.values(store.tweets).sort(
-        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    const provider = request.provider ?? store.activeProvider;
+    const publications = sortPublications(
+      Object.values(store.publications).filter(
+        (publication) => !provider || publication.provider === provider,
       ),
-      replyCount: Object.keys(store.communityReplies).length,
-      accountInfo: store.accountInfo,
+    );
+    const comments = Object.values(store.commentsByPublication)
+      .flat()
+      .filter((comment) => !provider || comment.provider === provider);
+    const engagements = Object.values(store.engagementsByPublication)
+      .flat()
+      .filter((engagement) => !provider || engagement.provider === provider);
+    return {
+      publications,
+      commentsCount: comments.length,
+      engagementsCount: engagements.length,
+      tweets:
+        provider && provider !== "x"
+          ? []
+          : Object.values(store.tweets).sort(
+              (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+            ),
+      replyCount: provider && provider !== "x" ? 0 : Object.keys(store.communityReplies).length,
+      accountInfo: provider && provider !== "x" ? null : store.accountInfo,
       trackedProfiles: store.trackedProfiles,
       lastUpdated: store.lastUpdated,
     };
   }
 
   if (request.action === "GET_EXPORT") {
-    return buildExportJSON(store);
+    return buildExportJSON(storeForProvider(store, request.provider ?? store.activeProvider));
   }
 
   if (request.action === "GET_ENDPOINTS") {
-    return { endpoints: endpointSummary(store), lastUpdated: store.lastUpdated };
+    const provider = request.provider ?? store.activeProvider;
+    const endpoints = endpointSummary(store);
+    return {
+      endpoints: Object.fromEntries(
+        Object.entries(endpoints).filter(
+          ([, endpoint]) => !provider || endpoint.provider === provider,
+        ),
+      ),
+      lastUpdated: store.lastUpdated,
+    };
   }
 
   if (request.action === "GET_ENDPOINT_PAYLOADS") {
@@ -844,11 +1049,18 @@ export function handleRuntimeMessage(
   }
 
   if (request.action === "GET_ALL_RAW") {
-    return { endpoints: store.endpoints };
+    const provider = request.provider ?? store.activeProvider;
+    return {
+      endpoints: Object.fromEntries(
+        Object.entries(store.endpoints).filter(
+          ([, endpoint]) => !provider || endpoint.provider === provider,
+        ),
+      ),
+    };
   }
 
   if (request.action === "CLEAR_ALL") {
-    clearCapturedData(store);
+    clearDisplayedData(store);
     return { success: true };
   }
 

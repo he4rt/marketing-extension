@@ -1,4 +1,9 @@
-import type { EndpointStore, ExportJSON, SocialPublication } from "../shared/domain";
+import type {
+  EndpointStore,
+  ExportJSON,
+  SocialProvider,
+  SocialPublication,
+} from "../shared/domain";
 
 type PublicationsResponse = {
   commentsCount?: number;
@@ -18,6 +23,10 @@ type AllRawResponse = {
   endpoints?: Record<string, EndpointStore>;
 };
 
+let activeProvider: null | SocialProvider = null;
+let activePageUrl = "";
+let refreshSequence = 0;
+
 const handleInput = getElement<HTMLInputElement>("handleInput");
 const setHandleBtn = getElement<HTMLButtonElement>("setHandleBtn");
 const publicationCountEl = getElement<HTMLElement>("publicationCount");
@@ -35,8 +44,7 @@ document.addEventListener("DOMContentLoaded", () => {
   chrome.runtime.sendMessage({ action: "GET_HANDLE" }, (r: { handle?: string }) => {
     if (r?.handle) handleInput.value = r.handle;
   });
-  loadPublications();
-  loadEndpoints();
+  refreshForActiveTab();
 
   document.querySelectorAll<HTMLButtonElement>(".tab").forEach((tab) => {
     tab.addEventListener("click", () => {
@@ -64,14 +72,17 @@ document.addEventListener("DOMContentLoaded", () => {
 
   chrome.runtime.onMessage.addListener((message: { action?: string }) => {
     if (message.action === "STORE_UPDATED") {
-      loadPublications();
-      loadEndpoints();
+      refreshForActiveTab();
     }
   });
 
+  chrome.tabs.onActivated?.addListener(() => refreshForActiveTab());
+  chrome.tabs.onUpdated?.addListener((_tabId, changeInfo) => {
+    if (changeInfo.status === "complete" || changeInfo.url) refreshForActiveTab();
+  });
+
   window.setInterval(() => {
-    loadPublications();
-    loadEndpoints();
+    refreshForActiveTab();
   }, 2000);
 });
 
@@ -84,15 +95,55 @@ function getElement<T extends HTMLElement = HTMLElement>(id: string): T {
 function setHandle() {
   const handle = handleInput.value.trim().replace(/^@/, "");
   handleInput.value = handle;
-  chrome.runtime.sendMessage({ action: "SET_HANDLE", handle }, () => {
-    loadPublications();
-    loadEndpoints();
+  chrome.tabs.query({ active: true, lastFocusedWindow: true }, (tabs) => {
+    const tab = tabs[0];
+    const provider = providerFromUrl(tab?.url) || activeProvider;
+    const pageUrl = tab?.url || activePageUrl;
+    activeProvider = provider;
+    activePageUrl = pageUrl;
+    chrome.runtime.sendMessage({ action: "SET_HANDLE", handle, provider, pageUrl }, () => {
+      loadPublications();
+      loadEndpoints();
+    });
+  });
+}
+
+function providerFromUrl(url?: string): null | SocialProvider {
+  if (!url) return null;
+  try {
+    const { hostname } = new URL(url);
+    if (hostname === "www.instagram.com" || hostname.endsWith(".instagram.com")) {
+      return "instagram";
+    }
+    if (hostname === "x.com" || hostname.endsWith(".x.com") || hostname === "twitter.com") {
+      return "x";
+    }
+  } catch {}
+  return null;
+}
+
+function refreshForActiveTab() {
+  const sequence = ++refreshSequence;
+  chrome.tabs.query({ active: true, lastFocusedWindow: true }, (tabs) => {
+    if (sequence !== refreshSequence) return;
+    const tab = tabs[0];
+    const provider = providerFromUrl(tab?.url);
+    activeProvider = provider;
+    activePageUrl = tab?.url || "";
+    chrome.runtime.sendMessage(
+      { action: "SET_ACTIVE_PROVIDER", provider, pageUrl: tab?.url },
+      () => {
+        if (sequence !== refreshSequence) return;
+        loadPublications();
+        loadEndpoints();
+      },
+    );
   });
 }
 
 function loadPublications() {
   chrome.runtime.sendMessage(
-    { action: "GET_PUBLICATIONS" },
+    { action: "GET_PUBLICATIONS", provider: activeProvider },
     (r: PublicationsResponse | undefined) => {
       if (!r) return;
       renderPublications(r.publications || [], (r.commentsCount || 0) + (r.engagementsCount || 0));
@@ -157,22 +208,25 @@ function renderPublications(publications: SocialPublication[], interactions: num
 }
 
 function handleExport() {
-  chrome.runtime.sendMessage({ action: "GET_EXPORT" }, (data: ExportJSON | undefined) => {
-    if (!data) return;
-    const json = JSON.stringify(data, null, 2);
-    const blob = new Blob([json], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    const handle =
-      data.tracked_profiles.instagram?.username ||
-      data.tracked_profiles.x?.username ||
-      data.tracked_account?.screen_name ||
-      "export";
-    a.href = url;
-    a.download = `he4rt-social-${handle}-${new Date().toISOString().split("T")[0]}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  });
+  chrome.runtime.sendMessage(
+    { action: "GET_EXPORT", provider: activeProvider },
+    (data: ExportJSON | undefined) => {
+      if (!data) return;
+      const json = JSON.stringify(data, null, 2);
+      const blob = new Blob([json], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const handle =
+        data.tracked_profiles.instagram?.username ||
+        data.tracked_profiles.x?.username ||
+        data.tracked_account?.screen_name ||
+        "export";
+      a.href = url;
+      a.download = `he4rt-social-${handle}-${new Date().toISOString().split("T")[0]}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    },
+  );
 }
 
 function handleClear() {
@@ -183,10 +237,13 @@ function handleClear() {
 }
 
 function loadEndpoints() {
-  chrome.runtime.sendMessage({ action: "GET_ENDPOINTS" }, (r: EndpointsResponse | undefined) => {
-    if (!r) return;
-    renderEndpoints(r.endpoints || {});
-  });
+  chrome.runtime.sendMessage(
+    { action: "GET_ENDPOINTS", provider: activeProvider },
+    (r: EndpointsResponse | undefined) => {
+      if (!r) return;
+      renderEndpoints(r.endpoints || {});
+    },
+  );
 }
 
 function renderEndpoints(
@@ -246,16 +303,19 @@ function copyEndpoint(name: string, btn: HTMLButtonElement) {
 }
 
 function handleCopyAll() {
-  chrome.runtime.sendMessage({ action: "GET_ALL_RAW" }, (r: AllRawResponse | undefined) => {
-    if (!r?.endpoints) return;
-    navigator.clipboard.writeText(JSON.stringify(r.endpoints, null, 2)).then(() => {
-      const original = copyAllBtn.textContent;
-      copyAllBtn.textContent = "OK!";
-      setTimeout(() => {
-        copyAllBtn.textContent = original;
-      }, 1200);
-    });
-  });
+  chrome.runtime.sendMessage(
+    { action: "GET_ALL_RAW", provider: activeProvider },
+    (r: AllRawResponse | undefined) => {
+      if (!r?.endpoints) return;
+      navigator.clipboard.writeText(JSON.stringify(r.endpoints, null, 2)).then(() => {
+        const original = copyAllBtn.textContent;
+        copyAllBtn.textContent = "OK!";
+        setTimeout(() => {
+          copyAllBtn.textContent = original;
+        }, 1200);
+      });
+    },
+  );
 }
 
 function labelType(type: SocialPublication["type"]) {
