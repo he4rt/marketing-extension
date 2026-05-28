@@ -23,6 +23,7 @@ function mergeStore(target: BackgroundStore, persisted: Partial<BackgroundStore>
     pageSessionKeys: persisted.pageSessionKeys || {},
     providerPageUrls: persisted.providerPageUrls || {},
     communityReplies: persisted.communityReplies || {},
+    trackedHandles: persisted.trackedHandles || {},
     trackedProfiles: persisted.trackedProfiles || {},
     tweets: persisted.tweets || {},
     favoriters: persisted.favoriters || {},
@@ -40,22 +41,19 @@ const hydration = chrome.storage.local
     }
   });
 
-let persistTimer: ReturnType<typeof setTimeout> | null = null;
 let persistPromise = Promise.resolve();
 
-function persistStoreSoon() {
-  if (persistTimer) clearTimeout(persistTimer);
-  persistTimer = setTimeout(() => {
-    persistTimer = null;
-    persistPromise = persistPromise
-      .then(() =>
-        chrome.storage.local.set({
-          [TRACKED_HANDLE_KEY]: store.trackedHandle,
-          [CAPTURE_STORE_KEY]: JSON.parse(JSON.stringify(store)),
-        }),
-      )
-      .catch((error) => console.error("[He4rt Analytics] falha ao persistir estado", error));
-  }, 250);
+function persistStore() {
+  const snapshot = JSON.parse(JSON.stringify(store));
+  persistPromise = persistPromise
+    .then(() =>
+      chrome.storage.local.set({
+        [TRACKED_HANDLE_KEY]: store.trackedHandle,
+        [CAPTURE_STORE_KEY]: snapshot,
+      }),
+    )
+    .catch((error) => console.error("[He4rt Analytics] falha ao persistir estado", error));
+  return persistPromise;
 }
 
 function shouldPersist(request: RuntimeMessage) {
@@ -90,18 +88,20 @@ chrome.runtime.onMessage.addListener((request: RuntimeMessage, _sender, sendResp
         log: console.log,
         persistHandle: (handle) => chrome.storage.local.set({ [TRACKED_HANDLE_KEY]: handle }),
       });
-      if (shouldPersist(request)) persistStoreSoon();
-      if (
-        request.action === "CAPTURED_PAYLOAD" ||
-        request.action === "GRAPHQL_CAPTURED" ||
-        request.action === "SET_ACTIVE_PROVIDER" ||
-        request.action === "PAGE_SESSION_STARTED" ||
-        request.action === "VISIBLE_PUBLICATIONS" ||
-        request.action === "VISIBLE_COMMENTS"
-      ) {
-        notifyStoreUpdated();
-      }
-      sendResponse(response);
+      const persisted = shouldPersist(request) ? persistStore() : Promise.resolve();
+      persisted.then(() => {
+        if (
+          request.action === "CAPTURED_PAYLOAD" ||
+          request.action === "GRAPHQL_CAPTURED" ||
+          request.action === "SET_ACTIVE_PROVIDER" ||
+          request.action === "PAGE_SESSION_STARTED" ||
+          request.action === "VISIBLE_PUBLICATIONS" ||
+          request.action === "VISIBLE_COMMENTS"
+        ) {
+          notifyStoreUpdated();
+        }
+        sendResponse(response);
+      });
     })
     .catch((error) => {
       console.error("[He4rt Analytics] falha ao hidratar estado", error);

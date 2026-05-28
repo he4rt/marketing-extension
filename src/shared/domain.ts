@@ -155,6 +155,7 @@ export type BackgroundStore = {
   providerPageUrls: Partial<Record<SocialProvider, string>>;
   publications: Record<string, SocialPublication>;
   trackedHandle: string;
+  trackedHandles: Partial<Record<SocialProvider, string>>;
   trackedProfiles: Partial<Record<SocialProvider, TrackedProfile>>;
 
   // Compatibility fields for existing X consumers while the export migrates.

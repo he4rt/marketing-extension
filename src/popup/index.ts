@@ -41,9 +41,6 @@ const emptyEndpoints = getElement<HTMLElement>("emptyEndpoints");
 const endpointList = getElement<HTMLElement>("endpointList");
 
 document.addEventListener("DOMContentLoaded", () => {
-  chrome.runtime.sendMessage({ action: "GET_HANDLE" }, (r: { handle?: string }) => {
-    if (r?.handle) handleInput.value = r.handle;
-  });
   refreshForActiveTab();
 
   document.querySelectorAll<HTMLButtonElement>(".tab").forEach((tab) => {
@@ -134,10 +131,18 @@ function refreshForActiveTab() {
       { action: "SET_ACTIVE_PROVIDER", provider, pageUrl: tab?.url },
       () => {
         if (sequence !== refreshSequence) return;
+        syncHandleInput(provider);
         loadPublications();
         loadEndpoints();
       },
     );
+  });
+}
+
+function syncHandleInput(provider: null | SocialProvider) {
+  chrome.runtime.sendMessage({ action: "GET_HANDLE", provider }, (r: { handle?: string }) => {
+    if (document.activeElement === handleInput) return;
+    handleInput.value = r?.handle || "";
   });
 }
 

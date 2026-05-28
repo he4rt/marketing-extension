@@ -24,6 +24,7 @@ export type SetHandleMessage = {
 
 export type GetHandleMessage = {
   action: "GET_HANDLE";
+  provider?: null | SocialProvider;
 };
 
 export type GetPublicationsMessage = {

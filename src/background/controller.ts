@@ -47,6 +47,7 @@ export function createStore(trackedHandle = ""): BackgroundStore {
     instagramVisiblePublications: [],
     instagramVisibleComments: [],
     communityReplies: {},
+    trackedHandles: {},
     trackedProfiles: {},
     nextCaptureOrder: 1,
     pageSessionKey: "",
@@ -287,17 +288,21 @@ function resolveInstagramPublicationId(store: BackgroundStore, publicationId: st
   return publicationId;
 }
 
+function trackedHandleForProvider(store: BackgroundStore, provider: SocialProvider) {
+  return (store.trackedHandles[provider] ?? store.trackedHandle).trim();
+}
+
 function visibleInstagramItemsForHandle(
   store: BackgroundStore,
   items: BackgroundStore["instagramVisiblePublications"],
 ) {
-  const handle = store.trackedHandle.trim().toLowerCase();
+  const handle = trackedHandleForProvider(store, "instagram").toLowerCase();
   if (!handle) return items;
   return items.filter((item) => (item.author?.username || "").toLowerCase() === handle);
 }
 
 function instagramPublicationAllowedForComments(store: BackgroundStore, shortcode: string) {
-  const handle = store.trackedHandle.trim().toLowerCase();
+  const handle = trackedHandleForProvider(store, "instagram").toLowerCase();
   if (!handle) return true;
   const publicationId = store.instagramPublicationIdsByShortcode[shortcode];
   const publication =
@@ -311,42 +316,39 @@ function instagramPublicationAllowedForComments(store: BackgroundStore, shortcod
 }
 
 function processXCapture(store: BackgroundStore, request: CapturedPayloadMessage) {
-  const handle = store.trackedHandle.toLowerCase();
+  const trackedHandle = trackedHandleForProvider(store, "x");
+  const handle = trackedHandle.toLowerCase();
 
   if (request.endpoint === "UserTweets") {
-    processUserTweetsPayload(
-      request.payload,
-      store.trackedHandle,
-      (tweet, publication, rawResult) => {
-        const authorHandle = tweet.author.screen_name.toLowerCase();
+    processUserTweetsPayload(request.payload, trackedHandle, (tweet, publication, rawResult) => {
+      const authorHandle = tweet.author.screen_name.toLowerCase();
 
-        if (authorHandle === handle) {
-          if (!store.accountInfo && tweet.author.rest_id) {
-            const authorResult = rawResult.core?.user_results?.result;
-            store.accountInfo = accountInfoFromUser(authorResult || {}, tweet);
-            store.trackedProfiles.x = accountInfoToTrackedProfile(store.accountInfo);
-          }
-          store.tweets[tweet.tweet_id] = tweet;
-          storePublication(store, publication);
+      if (authorHandle === handle) {
+        if (!store.accountInfo && tweet.author.rest_id) {
+          const authorResult = rawResult.core?.user_results?.result;
+          store.accountInfo = accountInfoFromUser(authorResult || {}, tweet);
+          store.trackedProfiles.x = accountInfoToTrackedProfile(store.accountInfo);
         }
+        store.tweets[tweet.tweet_id] = tweet;
+        storePublication(store, publication);
+      }
 
-        if (tweet.in_reply_to_screen_name?.toLowerCase() === handle && authorHandle !== handle) {
-          store.communityReplies[tweet.tweet_id] = publication;
-          storePublication(store, publication);
-          storeEngagement(store, {
-            provider: "x",
-            publication_id: tweet.in_reply_to_tweet_id || tweet.tweet_id,
-            kind: "comment",
-            engagement_id: publicationKey(
-              "x",
-              `${tweet.in_reply_to_tweet_id || tweet.tweet_id}:reply:${tweet.tweet_id}`,
-            ),
-            actor: publication.author,
-            engaged_at: tweet.created_at,
-          });
-        }
-      },
-    );
+      if (tweet.in_reply_to_screen_name?.toLowerCase() === handle && authorHandle !== handle) {
+        store.communityReplies[tweet.tweet_id] = publication;
+        storePublication(store, publication);
+        storeEngagement(store, {
+          provider: "x",
+          publication_id: tweet.in_reply_to_tweet_id || tweet.tweet_id,
+          kind: "comment",
+          engagement_id: publicationKey(
+            "x",
+            `${tweet.in_reply_to_tweet_id || tweet.tweet_id}:reply:${tweet.tweet_id}`,
+          ),
+          actor: publication.author,
+          engaged_at: tweet.created_at,
+        });
+      }
+    });
   }
 
   if (request.endpoint === "Favoriters") {
@@ -368,8 +370,8 @@ function processXCapture(store: BackgroundStore, request: CapturedPayloadMessage
     const user = (request.payload as AnyRecord)?.data?.user?.result;
     if (
       user &&
-      store.trackedHandle &&
-      user.core?.screen_name?.toLowerCase() === store.trackedHandle.toLowerCase()
+      trackedHandleForProvider(store, "x") &&
+      user.core?.screen_name?.toLowerCase() === trackedHandleForProvider(store, "x").toLowerCase()
     ) {
       store.accountInfo = accountInfoFromUser(user);
       store.trackedProfiles.x = accountInfoToTrackedProfile(store.accountInfo);
@@ -378,7 +380,7 @@ function processXCapture(store: BackgroundStore, request: CapturedPayloadMessage
 }
 
 function processInstagramCapture(store: BackgroundStore, request: CapturedPayloadMessage) {
-  const handle = store.trackedHandle.toLowerCase();
+  const handle = trackedHandleForProvider(store, "instagram").toLowerCase();
   const publications = extractInstagramPublications(request.payload);
   const pageShortcode = instagramShortcodeFromUrl(request.pageUrl);
 
@@ -425,17 +427,21 @@ function processInstagramCapture(store: BackgroundStore, request: CapturedPayloa
 
 function clearCapturedData(store: BackgroundStore) {
   const trackedHandle = store.trackedHandle;
+  const trackedHandles = { ...store.trackedHandles };
   Object.assign(store, createStore(trackedHandle));
+  store.trackedHandles = trackedHandles;
   store.lastUpdated = new Date().toISOString();
 }
 
 function clearDisplayedData(store: BackgroundStore) {
   const trackedHandle = store.trackedHandle;
+  const trackedHandles = { ...store.trackedHandles };
   const activeProvider = store.activeProvider;
   const pageSessionKeys = store.pageSessionKeys;
   const providerPageUrls = store.providerPageUrls;
   const archivedEndpoints = { ...store.archivedEndpoints, ...store.endpoints };
   Object.assign(store, createStore(trackedHandle));
+  store.trackedHandles = trackedHandles;
   store.activeProvider = activeProvider;
   store.pageSessionKeys = pageSessionKeys;
   store.providerPageUrls = providerPageUrls;
@@ -490,19 +496,14 @@ function activateContext(
   provider: null | SocialProvider,
   pageUrl?: string,
 ) {
-  const previousUrl = provider ? store.providerPageUrls[provider] : "";
   const switchingProvider = Boolean(
     provider && store.activeProvider && store.activeProvider !== provider,
   );
-  const switchingUrl = Boolean(provider && pageUrl && previousUrl && previousUrl !== pageUrl);
   const staleHydratedContext = Boolean(
     provider && !store.activeProvider && hasCapturedDataOutsideProvider(store, provider),
   );
 
-  if (
-    (switchingProvider || switchingUrl || staleHydratedContext || !provider) &&
-    hasCapturedData(store)
-  ) {
+  if ((switchingProvider || staleHydratedContext) && hasCapturedData(store)) {
     clearCapturedData(store);
   }
 
@@ -621,6 +622,7 @@ function reprocessPayloads(store: BackgroundStore) {
   const visibleComments = [...store.instagramVisibleComments];
   const providerPageUrls = { ...store.providerPageUrls };
   const pageSessionKeys = { ...store.pageSessionKeys };
+  const trackedHandles = { ...store.trackedHandles };
   const archivedEndpoints = { ...store.archivedEndpoints };
   const cachedEndpoints = { ...store.archivedEndpoints, ...store.endpoints };
   const payloads = Object.values(cachedEndpoints).flatMap((endpoint) =>
@@ -639,6 +641,7 @@ function reprocessPayloads(store: BackgroundStore) {
   store.instagramVisibleComments = visibleComments;
   store.pageSessionKeys = pageSessionKeys;
   store.providerPageUrls = providerPageUrls;
+  store.trackedHandles = trackedHandles;
   store.archivedEndpoints = archivedEndpoints;
 
   visibleInstagramItemsForHandle(store, visiblePublications).forEach((item, index) => {
@@ -905,7 +908,6 @@ export function handleRuntimeMessage(
     activateContext(store, request.provider, request.pageUrl);
     store.providerPageUrls[request.provider] = request.pageUrl;
     if (store.pageSessionKeys[request.provider] !== request.sessionKey) {
-      clearCapturedData(store);
       store.activeProvider = request.provider;
       store.providerPageUrls[request.provider] = request.pageUrl;
       store.pageSessionKey = request.sessionKey;
@@ -981,6 +983,7 @@ export function handleRuntimeMessage(
       activateContext(store, provider, request.pageUrl);
     }
     store.trackedHandle = request.handle;
+    if (provider) store.trackedHandles[provider] = request.handle;
     context.persistHandle?.(request.handle);
     reprocessPayloads(store);
     return {
@@ -991,7 +994,8 @@ export function handleRuntimeMessage(
   }
 
   if (request.action === "GET_HANDLE") {
-    return { handle: store.trackedHandle };
+    const provider = Object.hasOwn(request, "provider") ? request.provider : null;
+    return { handle: provider ? store.trackedHandles[provider] || "" : store.trackedHandle };
   }
 
   if (request.action === "GET_PUBLICATIONS" || request.action === "GET_TWEETS") {

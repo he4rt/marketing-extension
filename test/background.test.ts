@@ -63,6 +63,30 @@ describe("background controller", () => {
     expect(app.sendMessage({ action: "GET_HANDLE" })).toEqual({ handle: "He4rtDevs" });
   });
 
+  test("mantém filtros separados por provider", () => {
+    const app = createHarness();
+
+    app.sendMessage({
+      action: "SET_HANDLE",
+      handle: "he4rtdevs",
+      provider: "instagram",
+      pageUrl: "https://www.instagram.com/",
+    });
+    app.sendMessage({
+      action: "SET_HANDLE",
+      handle: "He4rtDevs",
+      provider: "x",
+      pageUrl: "https://x.com/He4rtDevs",
+    });
+
+    expect(app.sendMessage({ action: "GET_HANDLE", provider: "instagram" })).toEqual({
+      handle: "he4rtdevs",
+    });
+    expect(app.sendMessage({ action: "GET_HANDLE", provider: "x" })).toEqual({
+      handle: "He4rtDevs",
+    });
+  });
+
   test("captura UserTweets, processa timeline aninhada e deduplica por tweet id", () => {
     const app = createHarness();
 
@@ -818,7 +842,7 @@ describe("background controller", () => {
     expect(exported.engagements_by_publication["instagram:394"]).toHaveLength(1);
   });
 
-  test("limpa dados capturados ao iniciar nova sessão de página sem apagar handle", () => {
+  test("mantém dados capturados ao iniciar nova sessão do mesmo provider", () => {
     const app = createHarness();
 
     app.sendMessage({ action: "SET_HANDLE", handle: "he4rtdevs" });
@@ -845,11 +869,11 @@ describe("background controller", () => {
     expect(app.sendMessage({ action: "GET_HANDLE" })).toEqual({ handle: "he4rtdevs" });
     expect(
       (app.sendMessage({ action: "GET_PUBLICATIONS" }) as { publications: unknown[] }).publications,
-    ).toHaveLength(0);
+    ).toHaveLength(2);
     expect(
       (app.sendMessage({ action: "GET_ENDPOINTS" }) as { endpoints: Record<string, unknown> })
         .endpoints,
-    ).toEqual({});
+    ).toHaveProperty("instagram:InstagramFeedTimeline");
   });
 
   test("alterna provider ativo pelo popup descartando dados do contexto anterior", () => {
@@ -921,6 +945,39 @@ describe("background controller", () => {
         }
       ).publications,
     ).toHaveLength(0);
+  });
+
+  test("não limpa dados quando o popup abre sem detectar provider", () => {
+    const app = createHarness();
+
+    app.sendMessage({ action: "SET_HANDLE", handle: "he4rtdevs" });
+    app.sendMessage({
+      action: "SET_ACTIVE_PROVIDER",
+      provider: "instagram",
+      pageUrl: "https://www.instagram.com/",
+    });
+    capture(
+      app,
+      "InstagramFeedTimeline",
+      instagramFeedPayload,
+      "https://www.instagram.com/",
+      "2026-05-20T17:30:00.000Z",
+      "instagram",
+    );
+
+    app.sendMessage({
+      action: "SET_ACTIVE_PROVIDER",
+      provider: null,
+      pageUrl: "chrome-extension://popup.html",
+    });
+
+    expect(
+      (
+        app.sendMessage({ action: "GET_PUBLICATIONS", provider: "instagram" }) as {
+          publications: unknown[];
+        }
+      ).publications,
+    ).toHaveLength(2);
   });
 
   test("recarregar uma página limpa todos os dados do contexto anterior", () => {
