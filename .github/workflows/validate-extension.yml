@@ -1,0 +1,44 @@
+name: Validar extensão
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - instagram
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validar build, testes e manifest
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+
+      - name: Configurar Bun via mise
+        uses: jdx/mise-action@v2
+        with:
+          install: true
+          cache: true
+
+      - name: Instalar dependências
+        run: bun install --frozen-lockfile
+
+      - name: Checar tipos
+        run: bun run typecheck
+
+      - name: Validar extensão
+        run: bun run validate
+
+      - name: Gerar build carregável no Chrome
+        run: bun run build
+
+      - name: Gerar pacote da extensão
+        run: bun run package
+
