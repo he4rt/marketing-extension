@@ -95,13 +95,21 @@ function emptyInstagramStore(): InstagramStore {
 
 function emptyLinkedInStore(): LinkedInStore {
   return {
-    posts: {},
-    reactions: {},
-    reposts: {},
-    comments: {},
-    commentReactions: {},
-    accountInfo: null,
-    feedOrder: [],
+    // Shape normalizado (alinhado a x/instagram). Hoje o write path do LinkedIn
+    // ainda dual-escreve só no store legado plano; estes ficam vazios até #8.
+    publications: {},
+    commentsByPublication: {},
+    engagementsByPublication: {},
+    // Riqueza bespoke do LinkedIn (reaction_breakdown, feedOrder, reposts, etc.).
+    extra: {
+      posts: {},
+      reactions: {},
+      reposts: {},
+      comments: {},
+      commentReactions: {},
+      accountInfo: null,
+      feedOrder: [],
+    },
   };
 }
 
@@ -328,12 +336,13 @@ function reprocessPayloads(store: BackgroundStore) {
 function buildExportJSON(store: BackgroundStore): ExportJSON {
   const xEngs = Object.values(store.platforms.x.engagementsByPublication).flat();
   const igEngs = Object.values(store.platforms.instagram.engagementsByPublication).flat();
+  const liExtra = store.platforms.linkedin.extra;
   const liEngagers = new Set<string>();
-  for (const entry of Object.values(store.platforms.linkedin.reactions))
+  for (const entry of Object.values(liExtra.reactions))
     for (const u of entry.users) liEngagers.add(u.provider_user_id || u.username);
-  for (const entry of Object.values(store.platforms.linkedin.reposts))
+  for (const entry of Object.values(liExtra.reposts))
     for (const u of entry.users) liEngagers.add(u.urn || u.activity_urn || "");
-  for (const entry of Object.values(store.platforms.linkedin.comments))
+  for (const entry of Object.values(liExtra.comments))
     for (const c of entry.items) liEngagers.add(c.author.provider_user_id || c.author.username);
 
   const allEngagers = new Set([
@@ -364,15 +373,15 @@ function buildExportJSON(store: BackgroundStore): ExportJSON {
           total_content:
             Object.values(store.platforms.x.publications).length +
             Object.values(store.platforms.instagram.publications).length +
-            Object.values(store.platforms.linkedin.posts).length,
+            Object.values(liExtra.posts).length,
           total_likes:
             Object.values(store.platforms.x.publications).reduce((s, p) => s + p.metrics.like_count, 0) +
             Object.values(store.platforms.instagram.publications).reduce((s, p) => s + p.metrics.like_count, 0) +
-            Object.values(store.platforms.linkedin.posts).reduce((s, p) => s + p.metrics.like_count, 0),
+            Object.values(liExtra.posts).reduce((s, p) => s + p.metrics.like_count, 0),
           total_comments:
             Object.values(store.platforms.x.commentsByPublication).flat().length +
             Object.values(store.platforms.instagram.commentsByPublication).flat().length +
-            Object.values(store.platforms.linkedin.posts).reduce((s, p) => s + p.metrics.comment_count, 0),
+            Object.values(liExtra.posts).reduce((s, p) => s + p.metrics.comment_count, 0),
           unique_engagers: allEngagers.size,
         },
         by_platform: {
@@ -637,7 +646,7 @@ export function handleRuntimeMessage(
       };
     }
     if (provider === "linkedin") {
-      const lstore = store.platforms.linkedin;
+      const lstore = store.platforms.linkedin.extra;
       const enriched = (lstore.feedOrder || [])
         .map((id) => {
           const post = lstore.posts[id];
@@ -680,15 +689,16 @@ export function handleRuntimeMessage(
     byPlatform.instagram = { content_count: igPubs.length, engager_count: igEngagers.size };
 
     // LinkedIn
-    const liPubs = Object.values(store.platforms.linkedin.posts);
+    const liExtra = store.platforms.linkedin.extra;
+    const liPubs = Object.values(liExtra.posts);
     const liEngagers = new Set<string>();
-    for (const entry of Object.values(store.platforms.linkedin.reactions)) {
+    for (const entry of Object.values(liExtra.reactions)) {
       for (const u of entry.users) liEngagers.add(u.provider_user_id || u.username);
     }
-    for (const entry of Object.values(store.platforms.linkedin.reposts)) {
+    for (const entry of Object.values(liExtra.reposts)) {
       for (const u of entry.users) liEngagers.add(u.urn || u.activity_urn || "");
     }
-    for (const entry of Object.values(store.platforms.linkedin.comments)) {
+    for (const entry of Object.values(liExtra.comments)) {
       for (const c of entry.items) liEngagers.add(c.author.provider_user_id || c.author.username);
     }
     byPlatform.linkedin = { content_count: liPubs.length, engager_count: liEngagers.size };

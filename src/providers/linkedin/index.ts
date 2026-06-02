@@ -31,7 +31,8 @@ import {
 } from "./parser";
 
 export function processLinkedInCapture(store: BackgroundStore, request: CapturedPayloadMessage) {
-  const lstore = store.platforms.linkedin;
+  // A riqueza bespoke do LinkedIn vive em platforms.linkedin.extra (LinkedInExtra).
+  const lstore = store.platforms.linkedin.extra;
   const handle = trackedHandleForProvider(store, "linkedin");
 
   if (request.endpoint === "feedDashOrganizationalPageUpdates") {
@@ -265,7 +266,7 @@ function computeLinkedInEngagementMetrics(
 }
 
 export function buildPlatformDataLinkedin(store: BackgroundStore): ExportV3PlatformLinkedin {
-  const lstore = store.platforms.linkedin;
+  const lstore = store.platforms.linkedin.extra;
   const trackedAccountUrn = lstore.accountInfo?.provider_user_id || "";
 
   const content: ExportLinkedInPost[] = (lstore.feedOrder || []).reduce<ExportLinkedInPost[]>((acc, id) => {
@@ -331,7 +332,7 @@ export function buildPlatformDataLinkedin(store: BackgroundStore): ExportV3Platf
 }
 
 export function computeSummaryLinkedin(store: BackgroundStore): ExportSummaryLinkedin {
-  const lstore = store.platforms.linkedin;
+  const lstore = store.platforms.linkedin.extra;
   const posts = Object.values(lstore.posts);
   const totalReactionUsers = Object.values(lstore.reactions).reduce((s, r) => s + r.users.length, 0);
   const totalRepostUsers = Object.values(lstore.reposts).reduce((s, r) => s + r.users.length, 0);

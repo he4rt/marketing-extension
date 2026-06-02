@@ -203,7 +203,13 @@ export type LinkedInCommentStore = {
   items: SocialComment[];
 };
 
-export type LinkedInStore = {
+// Riqueza específica do LinkedIn que NÃO cabe no shape normalizado
+// (publications/comments/engagements). Vive no campo `extra` do NormalizedStore,
+// tipado na borda do provider. Aqui moram reaction_breakdown/total_reactions
+// (em posts[].metrics), a ordem do feed, reaction_type por usuário, o payload
+// completo de reposts/ACTOR_COMPONENT, reações em comentários e o accountInfo
+// que vira o trackedAccountUrn de audience_interactions.
+export type LinkedInExtra = {
   posts: Record<string, LinkedInPostData>;
   reactions: Record<string, LinkedInEngagerStore>;
   reposts: Record<string, LinkedInRepostStore>;
@@ -217,6 +223,15 @@ export type NormalizedStore = {
   publications: Record<string, SocialPublication>;
   commentsByPublication: Record<string, SocialComment[]>;
   engagementsByPublication: Record<string, SocialEngagement[]>;
+  // Aditivo/opcional: bolsão tipado na borda do provider para riqueza que não
+  // cabe no shape normalizado. x/instagram não o usam (fica undefined); LinkedIn
+  // guarda aqui seu store bespoke (LinkedInExtra). NÃO vaza para o export v3.
+  extra?: unknown;
+};
+
+// O store do LinkedIn agora É um NormalizedStore com o extra obrigatório e tipado.
+export type LinkedInStore = NormalizedStore & {
+  extra: LinkedInExtra;
 };
 
 // Main store ----------------------------------------------------------------
