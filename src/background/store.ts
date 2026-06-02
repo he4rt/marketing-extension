@@ -9,7 +9,11 @@ import type {
   SocialPublication,
 } from "../shared/domain";
 
-export function getEndpointStore(store: BackgroundStore, provider: SocialProvider, endpoint: string) {
+export function getEndpointStore(
+  store: BackgroundStore,
+  provider: SocialProvider,
+  endpoint: string,
+) {
   const key = `${provider}:${endpoint}`;
   if (!store.endpoints[key]) {
     store.endpoints[key] = { provider, endpoint, payloads: [], count: 0, lastSeen: null };
@@ -37,9 +41,15 @@ export function recordRawPayload(
 
 export function emptyMetrics(): SocialMetrics {
   return {
-    bookmark_count: 0, comment_count: 0, like_count: 0,
-    quote_count: 0, reply_count: 0, repost_count: 0,
-    retweet_count: 0, save_count: 0, view_count: 0,
+    bookmark_count: 0,
+    comment_count: 0,
+    like_count: 0,
+    quote_count: 0,
+    reply_count: 0,
+    repost_count: 0,
+    retweet_count: 0,
+    save_count: 0,
+    view_count: 0,
   };
 }
 

@@ -3,11 +3,7 @@ import {
   storePublication,
   trackedHandleForProvider,
 } from "../../background/store";
-import type {
-  BackgroundStore,
-  ExportSummaryX,
-  ExportV3PlatformX,
-} from "../../shared/domain";
+import type { BackgroundStore, ExportSummaryX, ExportV3PlatformX } from "../../shared/domain";
 import type { CapturedPayloadMessage } from "../../shared/messages";
 import type { BackgroundProviderFacet, ScopeMode } from "../contract";
 import { publicationKey } from "../shared/utils";
@@ -48,7 +44,10 @@ export function processXCapture(store: BackgroundStore, request: CapturedPayload
           provider: "x",
           publication_id: tweet.in_reply_to_tweet_id || tweet.tweet_id,
           kind: "comment",
-          engagement_id: publicationKey("x", `${tweet.in_reply_to_tweet_id || tweet.tweet_id}:reply:${tweet.tweet_id}`),
+          engagement_id: publicationKey(
+            "x",
+            `${tweet.in_reply_to_tweet_id || tweet.tweet_id}:reply:${tweet.tweet_id}`,
+          ),
           actor: publication.author,
           engaged_at: tweet.created_at,
         });
@@ -73,8 +72,11 @@ export function processXCapture(store: BackgroundStore, request: CapturedPayload
 
   if (request.endpoint === "UserByScreenName") {
     const user = (request.payload as AnyRecord)?.data?.user?.result;
-    if (user && trackedHandleForProvider(store, "x") &&
-        user.core?.screen_name?.toLowerCase() === trackedHandleForProvider(store, "x").toLowerCase()) {
+    if (
+      user &&
+      trackedHandleForProvider(store, "x") &&
+      user.core?.screen_name?.toLowerCase() === trackedHandleForProvider(store, "x").toLowerCase()
+    ) {
       const info = accountInfoFromUser(user);
       xstore.accountInfo = info;
       store.trackedProfiles.x = accountInfoToTrackedProfile(info);
@@ -85,7 +87,9 @@ export function processXCapture(store: BackgroundStore, request: CapturedPayload
 export function buildPlatformDataX(store: BackgroundStore): ExportV3PlatformX {
   const xstore = store.platforms.x;
   return {
-    content: Object.values(xstore.tweets).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
+    content: Object.values(xstore.tweets).sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    ),
     engagers: {
       likes_by_tweet: xstore.favoriters,
       replies: Object.values(xstore.communityReplies),

@@ -62,7 +62,9 @@ export function processLinkedInCapture(store: BackgroundStore, request: Captured
         if (!lstore.commentReactions[threadUrn]) {
           lstore.commentReactions[threadUrn] = { users: [] };
         }
-        const existing = new Set(lstore.commentReactions[threadUrn].users.map((u) => u.provider_user_id));
+        const existing = new Set(
+          lstore.commentReactions[threadUrn].users.map((u) => u.provider_user_id),
+        );
         const fresh = result.users.filter((u) => !existing.has(u.provider_user_id));
         lstore.commentReactions[threadUrn].users.push(...fresh);
       } else {
@@ -85,7 +87,10 @@ export function processLinkedInCapture(store: BackgroundStore, request: Captured
             provider: "linkedin",
             publication_id: pid,
             kind: "like",
-            engagement_id: publicationKey("linkedin", `${pid}:like:${user.provider_user_id || user.username}`),
+            engagement_id: publicationKey(
+              "linkedin",
+              `${pid}:like:${user.provider_user_id || user.username}`,
+            ),
             actor: user,
           });
         }
@@ -177,7 +182,8 @@ export function processLinkedInCapture(store: BackgroundStore, request: Captured
 
 function findLinkedInPublicationByUrn(store: BackgroundStore, urn: string) {
   return Object.values(store.platforms.linkedin.publications).find(
-    (p) => p.provider === "linkedin" && (p.publication_id === urn || p.reposted_publication_id === urn),
+    (p) =>
+      p.provider === "linkedin" && (p.publication_id === urn || p.reposted_publication_id === urn),
   );
 }
 
@@ -234,19 +240,28 @@ function computeLinkedInEngagementMetrics(
     for (const c of items) {
       if (depth === 0) realComments++;
       else replies++;
-      if (c.author.provider_user_id) { commenterUrns.add(c.author.provider_user_id); allUrns.add(c.author.provider_user_id); }
-      for (const r of (c.reaction_users || [])) {
-        if (r.provider_user_id) { reacterUrns.add(r.provider_user_id); allUrns.add(r.provider_user_id); }
+      if (c.author.provider_user_id) {
+        commenterUrns.add(c.author.provider_user_id);
+        allUrns.add(c.author.provider_user_id);
+      }
+      for (const r of c.reaction_users || []) {
+        if (r.provider_user_id) {
+          reacterUrns.add(r.provider_user_id);
+          allUrns.add(r.provider_user_id);
+        }
       }
       walk(c.replies || [], depth + 1);
     }
   };
   walk(comments, 0);
 
-  for (const u of (reactions?.users || [])) {
-    if (u.provider_user_id) { reacterUrns.add(u.provider_user_id); allUrns.add(u.provider_user_id); }
+  for (const u of reactions?.users || []) {
+    if (u.provider_user_id) {
+      reacterUrns.add(u.provider_user_id);
+      allUrns.add(u.provider_user_id);
+    }
   }
-  for (const u of (reposts?.users || [])) {
+  for (const u of reposts?.users || []) {
     if (u.urn) allUrns.add(u.urn);
   }
 
@@ -269,64 +284,72 @@ export function buildPlatformDataLinkedin(store: BackgroundStore): ExportV3Platf
   const lstore = store.platforms.linkedin.extra;
   const trackedAccountUrn = lstore.accountInfo?.provider_user_id || "";
 
-  const content: ExportLinkedInPost[] = (lstore.feedOrder || []).reduce<ExportLinkedInPost[]>((acc, id) => {
-    const post = lstore.posts[id];
-    if (!post) return acc;
-    const shareUrn = post.share_urn;
-    const activityUrn = post.activity_urn;
-    const reactions = lstore.reactions[shareUrn] || lstore.reactions[activityUrn];
-    const reposts = lstore.reposts[shareUrn];
-    const commentsStore = lstore.comments[shareUrn] || lstore.comments[activityUrn];
+  const content: ExportLinkedInPost[] = (lstore.feedOrder || []).reduce<ExportLinkedInPost[]>(
+    (acc, id) => {
+      const post = lstore.posts[id];
+      if (!post) return acc;
+      const shareUrn = post.share_urn;
+      const activityUrn = post.activity_urn;
+      const reactions = lstore.reactions[shareUrn] || lstore.reactions[activityUrn];
+      const reposts = lstore.reposts[shareUrn];
+      const commentsStore = lstore.comments[shareUrn] || lstore.comments[activityUrn];
 
-    const reactionUsers: LinkedInReactionUser[] = (reactions?.users || []).map((u) => ({
-      urn: u.provider_user_id,
-      name: u.name,
-      headline: "",
-      avatar_url: u.avatar_url,
-      navigation_url: "",
-      reaction_type: (u as any).reaction_type || "",
-    }));
+      const reactionUsers: LinkedInReactionUser[] = (reactions?.users || []).map((u) => ({
+        urn: u.provider_user_id,
+        name: u.name,
+        headline: "",
+        avatar_url: u.avatar_url,
+        navigation_url: "",
+        reaction_type: (u as any).reaction_type || "",
+      }));
 
-    const repostEntries: LinkedInRepostEntry[] = (reposts?.users || []).map((u) => ({
-      urn: u.urn,
-      name: u.name,
-      avatar_url: u.avatar_url,
-      ...(u.activity_urn ? {
-        id: u.id,
-        activity_urn: u.activity_urn,
-        share_urn: u.share_urn,
-        text: u.text,
-        type: u.type,
-        author: u.author,
-        metrics: u.metrics,
-        hashtags: u.hashtags,
-        media: u.media,
-        post_not_found: u.post_not_found,
-        reshare_ref: u.reshare_ref,
-      } : {}),
-    }));
+      const repostEntries: LinkedInRepostEntry[] = (reposts?.users || []).map((u) => ({
+        urn: u.urn,
+        name: u.name,
+        avatar_url: u.avatar_url,
+        ...(u.activity_urn
+          ? {
+              id: u.id,
+              activity_urn: u.activity_urn,
+              share_urn: u.share_urn,
+              text: u.text,
+              type: u.type,
+              author: u.author,
+              metrics: u.metrics,
+              hashtags: u.hashtags,
+              media: u.media,
+              post_not_found: u.post_not_found,
+              reshare_ref: u.reshare_ref,
+            }
+          : {}),
+      }));
 
-    const commentItems = commentsStore?.items || [];
-    const exportComments = buildLinkedInCommentWithReactions(commentItems, lstore.commentReactions);
+      const commentItems = commentsStore?.items || [];
+      const exportComments = buildLinkedInCommentWithReactions(
+        commentItems,
+        lstore.commentReactions,
+      );
 
-    const engagementMetrics = computeLinkedInEngagementMetrics(
-      reactions,
-      reposts,
-      exportComments,
-      trackedAccountUrn,
-    );
+      const engagementMetrics = computeLinkedInEngagementMetrics(
+        reactions,
+        reposts,
+        exportComments,
+        trackedAccountUrn,
+      );
 
-    acc.push({
-      ...post,
-      engagers: {
-        reactions: reactionUsers,
-        reposts: repostEntries,
-        comments: exportComments,
-      },
-      engagement_metrics: engagementMetrics,
-    });
-    return acc;
-  }, []);
+      acc.push({
+        ...post,
+        engagers: {
+          reactions: reactionUsers,
+          reposts: repostEntries,
+          comments: exportComments,
+        },
+        engagement_metrics: engagementMetrics,
+      });
+      return acc;
+    },
+    [],
+  );
 
   return { content };
 }
@@ -334,10 +357,16 @@ export function buildPlatformDataLinkedin(store: BackgroundStore): ExportV3Platf
 export function computeSummaryLinkedin(store: BackgroundStore): ExportSummaryLinkedin {
   const lstore = store.platforms.linkedin.extra;
   const posts = Object.values(lstore.posts);
-  const totalReactionUsers = Object.values(lstore.reactions).reduce((s, r) => s + r.users.length, 0);
+  const totalReactionUsers = Object.values(lstore.reactions).reduce(
+    (s, r) => s + r.users.length,
+    0,
+  );
   const totalRepostUsers = Object.values(lstore.reposts).reduce((s, r) => s + r.users.length, 0);
   const totalCommentItems = Object.values(lstore.comments).reduce((s, c) => s + c.items.length, 0);
-  const totalCommentReactionUsers = Object.values(lstore.commentReactions).reduce((s, r) => s + r.users.length, 0);
+  const totalCommentReactionUsers = Object.values(lstore.commentReactions).reduce(
+    (s, r) => s + r.users.length,
+    0,
+  );
 
   const allEngagers = new Set<string>();
   for (const entry of Object.values(lstore.reactions))

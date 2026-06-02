@@ -18,14 +18,23 @@ const store = createStore();
 
 async function hydrate() {
   const [local, session] = await Promise.all([
-    chrome.storage.local.get([LOCAL_KEYS.endpoints, LOCAL_KEYS.trackedHandles, LOCAL_KEYS.archivedEndpoints]),
+    chrome.storage.local.get([
+      LOCAL_KEYS.endpoints,
+      LOCAL_KEYS.trackedHandles,
+      LOCAL_KEYS.archivedEndpoints,
+    ]),
     chrome.storage.session.get(SESSION_KEY),
   ]);
 
   // Restore persistent data
-  if (local[LOCAL_KEYS.endpoints]) store.endpoints = local[LOCAL_KEYS.endpoints] as Record<string, EndpointStore>;
-  if (local[LOCAL_KEYS.trackedHandles]) store.trackedHandles = local[LOCAL_KEYS.trackedHandles] as Partial<Record<SocialProvider, string>>;
-  if (local[LOCAL_KEYS.archivedEndpoints]) store.archivedEndpoints = local[LOCAL_KEYS.archivedEndpoints] as Record<string, EndpointStore>;
+  if (local[LOCAL_KEYS.endpoints])
+    store.endpoints = local[LOCAL_KEYS.endpoints] as Record<string, EndpointStore>;
+  if (local[LOCAL_KEYS.trackedHandles])
+    store.trackedHandles = local[LOCAL_KEYS.trackedHandles] as Partial<
+      Record<SocialProvider, string>
+    >;
+  if (local[LOCAL_KEYS.archivedEndpoints])
+    store.archivedEndpoints = local[LOCAL_KEYS.archivedEndpoints] as Record<string, EndpointStore>;
 
   // Restore volatile per-platform processed data (rebuildable from raw)
   const saved = session[SESSION_KEY];
@@ -100,9 +109,7 @@ function shouldPersistLocal(request: RuntimeMessage) {
 // ---------------------------------------------------------------------------
 
 function notifyStoreUpdated() {
-  chrome.runtime
-    .sendMessage({ action: "STORE_UPDATED" })
-    .catch(() => {});
+  chrome.runtime.sendMessage({ action: "STORE_UPDATED" }).catch(() => {});
 }
 
 // ---------------------------------------------------------------------------

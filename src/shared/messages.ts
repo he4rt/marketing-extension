@@ -1,12 +1,4 @@
-import type {
-  EndpointStore,
-  SocialProvider,
-  SocialPublication,
-} from "./domain";
-import type {
-  ExportV3PerPlatform,
-  NormalizedStore,
-} from "./domain";
+import type { EndpointStore, NormalizedStore, SocialProvider } from "./domain";
 
 export type CapturedPayloadMessage = {
   action: "CAPTURED_PAYLOAD";

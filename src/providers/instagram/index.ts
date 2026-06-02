@@ -18,10 +18,7 @@ import type {
   SocialEngagement,
   SocialPublication,
 } from "../../shared/domain";
-import type {
-  CapturedPayloadMessage,
-  VisibleCommentsMessage,
-} from "../../shared/messages";
+import type { CapturedPayloadMessage, VisibleCommentsMessage } from "../../shared/messages";
 import type { BackgroundProviderFacet, ScopeMode } from "../contract";
 import { publicationKey } from "../shared/utils";
 import {
@@ -70,11 +67,13 @@ function instagramPublicationAllowedForComments(store: BackgroundStore, shortcod
   if (!handle) return true;
   const publicationId = istore.publicationIdsByShortcode[shortcode];
   const key = publicationKey("instagram", shortcode);
-  const pub = istore.publications[key] ||
+  const pub =
+    istore.publications[key] ||
     (publicationId && istore.publications[publicationKey("instagram", publicationId)]);
   if (pub) return pub.author.username.toLowerCase() === handle;
   return istore.visiblePublications.some(
-    (item) => item.shortcode === shortcode && (item.author?.username || "").toLowerCase() === handle,
+    (item) =>
+      item.shortcode === shortcode && (item.author?.username || "").toLowerCase() === handle,
   );
 }
 
@@ -82,7 +81,8 @@ export function instagramPlaceholderPublication(
   item: InstagramStore["visiblePublications"][number],
   visibleOrder: number,
 ): SocialPublication {
-  const mediaType = item.mediaType ||
+  const mediaType =
+    item.mediaType ||
     (item.url.includes("/reel/") || item.url.includes("/reels/") ? "reel" : "unknown");
   const metrics = emptyMetrics();
   metrics.comment_count = item.metrics?.comment_count || 0;
@@ -126,7 +126,10 @@ function migratePublicationRelations(
   const fromKey = publicationKey("instagram", fromPublicationId);
   const toKey = publicationKey("instagram", toPublicationId);
 
-  const migrateComments = (src: Record<string, SocialComment[]>, dst: Record<string, SocialComment[]>) => {
+  const migrateComments = (
+    src: Record<string, SocialComment[]>,
+    dst: Record<string, SocialComment[]>,
+  ) => {
     if (src[fromKey]?.length) {
       const existing = dst[toKey] || [];
       const existingIds = new Set(existing.map((c) => c.comment_id));
@@ -136,7 +139,10 @@ function migratePublicationRelations(
     }
   };
 
-  const migrateEngagements = (src: Record<string, SocialEngagement[]>, dst: Record<string, SocialEngagement[]>) => {
+  const migrateEngagements = (
+    src: Record<string, SocialEngagement[]>,
+    dst: Record<string, SocialEngagement[]>,
+  ) => {
     if (src[fromKey]?.length) {
       const existing = dst[toKey] || [];
       const existingIds = new Set(existing.map((e) => e.engagement_id));
@@ -165,7 +171,9 @@ export function processInstagramCapture(store: BackgroundStore, request: Capture
       publication.capture_priority = 0;
     }
     if (!handle || publication.author.username.toLowerCase() === handle) {
-      const prevMapping = publication.shortcode ? istore.publicationIdsByShortcode[publication.shortcode] : undefined;
+      const prevMapping = publication.shortcode
+        ? istore.publicationIdsByShortcode[publication.shortcode]
+        : undefined;
       storePublication(store, publication);
       if (publication.shortcode) {
         const prevId = prevMapping;
@@ -190,7 +198,10 @@ export function processInstagramCapture(store: BackgroundStore, request: Capture
       provider: "instagram",
       publication_id: comment.publication_id,
       kind: "comment",
-      engagement_id: publicationKey("instagram", `${comment.publication_id}:comment:${comment.comment_id}`),
+      engagement_id: publicationKey(
+        "instagram",
+        `${comment.publication_id}:comment:${comment.comment_id}`,
+      ),
       actor: comment.author,
       engaged_at: comment.created_at,
     });
@@ -228,17 +239,28 @@ export function processVisibleInstagramComments(
   if (!request.publication_shortcode) return;
 
   if (options.recordRaw !== false) {
-    recordRawPayload(store, "instagram", "InstagramDomComments", {
-      page_url: request.pageUrl,
-      publication_shortcode: request.publication_shortcode,
-      captured_at: request.captured_at,
-      comments: request.comments,
-    }, request.captured_at);
+    recordRawPayload(
+      store,
+      "instagram",
+      "InstagramDomComments",
+      {
+        page_url: request.pageUrl,
+        publication_shortcode: request.publication_shortcode,
+        captured_at: request.captured_at,
+        comments: request.comments,
+      },
+      request.captured_at,
+    );
   }
 
   const publicationId = resolveInstagramPublicationId(store, request.publication_shortcode);
-  const shouldStoreNormalized = instagramPublicationAllowedForComments(store, request.publication_shortcode);
-  const seen = new Set(istore.visibleComments.map((c) => `${c.publication_shortcode}:${c.comment_id}`));
+  const shouldStoreNormalized = instagramPublicationAllowedForComments(
+    store,
+    request.publication_shortcode,
+  );
+  const seen = new Set(
+    istore.visibleComments.map((c) => `${c.publication_shortcode}:${c.comment_id}`),
+  );
 
   for (const vc of request.comments) {
     const visibleKey = `${vc.publication_shortcode}:${vc.comment_id}`;
@@ -289,7 +311,10 @@ export function processVisibleInstagramComments(
       provider: "instagram",
       publication_id: comment.publication_id,
       kind: "comment",
-      engagement_id: publicationKey("instagram", `${comment.publication_id}:comment:${comment.comment_id}`),
+      engagement_id: publicationKey(
+        "instagram",
+        `${comment.publication_id}:comment:${comment.comment_id}`,
+      ),
       actor: comment.author,
       captured_at: request.captured_at,
       engaged_at: null,
