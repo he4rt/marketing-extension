@@ -9,6 +9,28 @@ import type {
   SocialPublication,
 } from "../shared/domain";
 
+export function getEndpointStore(store: BackgroundStore, provider: SocialProvider, endpoint: string) {
+  const key = `${provider}:${endpoint}`;
+  if (!store.endpoints[key]) {
+    store.endpoints[key] = { provider, endpoint, payloads: [], count: 0, lastSeen: null };
+  }
+  return store.endpoints[key];
+}
+
+export function recordRawPayload(
+  store: BackgroundStore,
+  provider: SocialProvider,
+  endpoint: string,
+  payload: unknown,
+  timestamp: string,
+) {
+  const ep = getEndpointStore(store, provider, endpoint);
+  ep.payloads.push(payload);
+  ep.count++;
+  ep.lastSeen = timestamp;
+  store.lastUpdated = timestamp;
+}
+
 // Helpers de armazenamento compartilhados por todos os providers.
 // Escrita dual (store legado plano + per-platform) durante a migração strangler;
 // os ramos legados saem na fatia de limpeza (#8).
