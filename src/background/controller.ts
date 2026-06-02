@@ -163,25 +163,6 @@ function normalizeCapture(request: RuntimeMessage): CapturedPayloadMessage | nul
 // emptyMetrics → src/background/store.ts
 
 
-// ---------------------------------------------------------------------------
-// Normalized data storage (dual-write: legacy + per-platform)
-// ---------------------------------------------------------------------------
-
-function platformNormalizedKey(provider: SocialProvider): keyof NormalizedStore {
-  return "publications";
-}
-
-function platformStoreFor(store: BackgroundStore, provider: SocialProvider): NormalizedStore {
-  if (provider === "x") return store.platforms.x;
-  if (provider === "instagram") return store.platforms.instagram;
-  if (provider === "linkedin") return { publications: {}, commentsByPublication: {}, engagementsByPublication: {} };
-  return { publications: {}, commentsByPublication: {}, engagementsByPublication: {} };
-}
-
-function platformNormalizedExists(store: BackgroundStore, provider: SocialProvider): boolean {
-  return provider === "x" || provider === "instagram";
-}
-
 // storePublication / storeComment / storeEngagement → src/background/store.ts
 
 // ---------------------------------------------------------------------------
