@@ -1,3 +1,4 @@
+import { providerForHost } from "../providers/meta";
 import type { SocialProvider } from "../shared/domain";
 import type { PageCapturedMessage } from "../shared/messages";
 
@@ -22,10 +23,7 @@ const INSTAGRAM_MARKERS = [
 
 function providerFromUrl(url: string): null | SocialProvider {
   try {
-    const host = new URL(url, window.location.href).hostname;
-    if (host === "x.com" || host.endsWith(".x.com") || host === "twitter.com") return "x";
-    if (host === "www.instagram.com" || host === "instagram.com") return "instagram";
-    if (host === "www.linkedin.com" || host === "linkedin.com") return "linkedin";
+    return providerForHost(new URL(url, window.location.href).hostname);
   } catch {}
   return null;
 }

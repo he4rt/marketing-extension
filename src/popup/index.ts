@@ -7,6 +7,7 @@ import type {
   SocialProvider,
   SocialPublication,
 } from "../shared/domain";
+import { PROVIDER_METAS } from "../providers/meta";
 
 type ProviderData = {
   publications: Record<string, SocialPublication>;
@@ -41,11 +42,12 @@ type PlatformTabConfig = {
   name: string;
 };
 
-const TABS: PlatformTabConfig[] = [
-  { prefix: "x", provider: "x", color: "#1d9bf0", name: "X" },
-  { prefix: "ig", provider: "instagram", color: "#ff7ac8", name: "Instagram" },
-  { prefix: "li", provider: "linkedin", color: "#0a66c2", name: "LinkedIn" },
-];
+const TABS: PlatformTabConfig[] = PROVIDER_METAS.map((meta) => ({
+  prefix: meta.popupPrefix,
+  provider: meta.id,
+  color: meta.color,
+  name: meta.name,
+}));
 
 let refreshSequence = 0;
 
@@ -57,12 +59,9 @@ document.addEventListener("DOMContentLoaded", () => {
   autoSelectTab();
 });
 
-const HOST_TAB_MAP: Array<{ host: string; tab: string }> = [
-  { host: "x.com", tab: "x" },
-  { host: "twitter.com", tab: "x" },
-  { host: "instagram.com", tab: "instagram" },
-  { host: "linkedin.com", tab: "linkedin" },
-];
+const HOST_TAB_MAP: Array<{ host: string; tab: string }> = PROVIDER_METAS.flatMap((meta) =>
+  meta.hosts.map((host) => ({ host, tab: meta.id })),
+);
 
 function switchTab(tabId: string) {
   document.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));

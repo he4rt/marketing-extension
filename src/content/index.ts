@@ -1,3 +1,4 @@
+import { providerForHost } from "../providers/meta";
 import type { PageCapturedMessage, PageGraphqlMessage } from "../shared/messages";
 
 const sentInstagramScripts = new Set<string>();
@@ -60,12 +61,7 @@ function sendRuntimeMessage(message: Record<string, unknown>) {
 }
 
 function currentProvider() {
-  if (location.hostname.includes("instagram.com")) return "instagram";
-  if (location.hostname === "x.com" || location.hostname.endsWith(".x.com")) return "x";
-  if (location.hostname === "twitter.com") return "x";
-  if (location.hostname === "www.linkedin.com" || location.hostname === "linkedin.com")
-    return "linkedin";
-  return null;
+  return providerForHost(location.hostname);
 }
 
 function createPageSessionKey(url: string) {
