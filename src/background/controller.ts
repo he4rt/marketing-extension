@@ -57,6 +57,7 @@ import type {
   RuntimeMessage,
   VisibleCommentsMessage,
 } from "../shared/messages";
+import type { BackgroundProviderFacet } from "../providers/contract";
 
 type AnyRecord = Record<string, any>;
 
@@ -685,6 +686,15 @@ function findLinkedInPublicationByUrn(store: BackgroundStore, urn: string) {
   );
 }
 
+// Registry de processamento por provider — o dispatch deixa de ser if-cascade.
+// Adicionar um provider passa a ser registrar sua faceta aqui (e, nas próximas fatias,
+// movê-la para src/providers/<id>/).
+const BACKGROUND_PROVIDERS: Record<SocialProvider, BackgroundProviderFacet> = {
+  x: { id: "x", processCapture: processXCapture },
+  instagram: { id: "instagram", processCapture: processInstagramCapture },
+  linkedin: { id: "linkedin", processCapture: processLinkedInCapture },
+};
+
 // ---------------------------------------------------------------------------
 // Visible Instagram helpers
 // ---------------------------------------------------------------------------
@@ -879,9 +889,7 @@ function reprocessPayloads(store: BackgroundStore) {
   });
 
   for (const p of payloads) {
-    if (p.provider === "x") processXCapture(store, p);
-    if (p.provider === "instagram") processInstagramCapture(store, p);
-    if (p.provider === "linkedin") processLinkedInCapture(store, p);
+    BACKGROUND_PROVIDERS[p.provider].processCapture(store, p);
   }
 
   const commentsByBatch = new Map<string, VisibleCommentsMessage["comments"]>();
@@ -1375,9 +1383,7 @@ export function handleRuntimeMessage(
   if (capture) {
     if (capture.pageUrl) store.providerPageUrls[capture.provider] = capture.pageUrl;
     recordRawPayload(store, capture.provider, capture.endpoint, capture.payload, capture.timestamp);
-    if (capture.provider === "x") processXCapture(store, capture);
-    if (capture.provider === "instagram") processInstagramCapture(store, capture);
-    if (capture.provider === "linkedin") processLinkedInCapture(store, capture);
+    BACKGROUND_PROVIDERS[capture.provider].processCapture(store, capture);
     context.log?.(`[Social Interceptor] ${capture.provider}:${capture.endpoint} (publicações: ${Object.keys(store.publications).length})`);
     return { success: true };
   }
