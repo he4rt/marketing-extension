@@ -44,7 +44,8 @@ function capture(
   payload: unknown,
   pageUrl: string,
   timestamp = "2026-05-20T12:00:00.000Z",
-  provider: "instagram" | "x" = "x",
+  provider: "instagram" | "linkedin" | "x" = "x",
+  url?: string,
 ) {
   return harness.sendMessage({
     action: "CAPTURED_PAYLOAD",
@@ -53,6 +54,7 @@ function capture(
     payload,
     timestamp,
     pageUrl,
+    url,
   });
 }
 
