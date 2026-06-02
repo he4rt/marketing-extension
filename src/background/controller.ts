@@ -14,16 +14,15 @@ import {
 } from "../providers/linkedin/parser";
 import { publicationKey } from "../providers/shared/utils";
 import {
-  accountInfoFromUser,
-  accountInfoToTrackedProfile,
-  favoriterToEngagement,
-  processFavoritersPayload,
-  processUserTweetsPayload,
-} from "../providers/x/parser";
+  buildPlatformDataX,
+  computeSummaryX,
+  xProvider,
+} from "../providers/x";
 import type {
   BackgroundStore,
   EndpointStore,
   ExportComment,
+  ExportInstagramPost,
   ExportJSON,
   ExportLinkedInPost,
   ExportSummaryInstagram,
@@ -201,72 +200,7 @@ function platformNormalizedExists(store: BackgroundStore, provider: SocialProvid
 
 // trackedHandleForProvider → src/background/store.ts
 
-function processXCapture(store: BackgroundStore, request: CapturedPayloadMessage) {
-  const trackedHandle = trackedHandleForProvider(store, "x");
-  const handle = trackedHandle.toLowerCase();
-  const xstore = store.platforms.x;
-
-  if (request.endpoint === "UserTweets") {
-    processUserTweetsPayload(request.payload, trackedHandle, (tweet, publication, rawResult) => {
-      const authorHandle = tweet.author.screen_name.toLowerCase();
-
-      if (authorHandle === handle) {
-        if (!xstore.accountInfo && tweet.author.rest_id) {
-          const authorResult = rawResult.core?.user_results?.result;
-          const info = accountInfoFromUser(authorResult || {}, tweet);
-          xstore.accountInfo = info;
-          store.accountInfo = info;
-          store.trackedProfiles.x = accountInfoToTrackedProfile(info);
-        }
-        xstore.tweets[tweet.tweet_id] = tweet;
-        store.tweets[tweet.tweet_id] = tweet;
-        storePublication(store, publication);
-      }
-
-      if (tweet.in_reply_to_screen_name?.toLowerCase() === handle && authorHandle !== handle) {
-        xstore.communityReplies[tweet.tweet_id] = publication;
-        store.communityReplies[tweet.tweet_id] = publication;
-        storePublication(store, publication);
-        storeEngagement(store, {
-          provider: "x",
-          publication_id: tweet.in_reply_to_tweet_id || tweet.tweet_id,
-          kind: "comment",
-          engagement_id: publicationKey("x", `${tweet.in_reply_to_tweet_id || tweet.tweet_id}:reply:${tweet.tweet_id}`),
-          actor: publication.author,
-          engaged_at: tweet.created_at,
-        });
-      }
-    });
-  }
-
-  if (request.endpoint === "Favoriters") {
-    const users = processFavoritersPayload(request.payload);
-    const tweetIdMatch = (request.pageUrl || "").match(/status\/(\d+)/);
-    if (tweetIdMatch && users.length) {
-      const tweetId = tweetIdMatch[1] || "";
-      if (!xstore.favoriters[tweetId]) xstore.favoriters[tweetId] = [];
-      if (!store.favoriters[tweetId]) store.favoriters[tweetId] = [];
-      const existing = new Set(xstore.favoriters[tweetId].map((u) => u.rest_id));
-      const freshUsers = users.filter((u) => !existing.has(u.rest_id));
-      xstore.favoriters[tweetId].push(...freshUsers);
-      store.favoriters[tweetId].push(...freshUsers);
-      for (const user of freshUsers) {
-        storeEngagement(store, favoriterToEngagement(tweetId, user));
-      }
-    }
-  }
-
-  if (request.endpoint === "UserByScreenName") {
-    const user = (request.payload as AnyRecord)?.data?.user?.result;
-    if (user && trackedHandleForProvider(store, "x") &&
-        user.core?.screen_name?.toLowerCase() === trackedHandleForProvider(store, "x").toLowerCase()) {
-      const info = accountInfoFromUser(user);
-      xstore.accountInfo = info;
-      store.accountInfo = info;
-      store.trackedProfiles.x = accountInfoToTrackedProfile(info);
-    }
-  }
-}
+// processXCapture → src/providers/x/index.ts
 
 function instagramShortcodeFromUrl(pageUrl?: string) {
   if (!pageUrl) return "";
@@ -590,7 +524,7 @@ function findLinkedInPublicationByUrn(store: BackgroundStore, urn: string) {
 // Adicionar um provider passa a ser registrar sua faceta aqui (e, nas próximas fatias,
 // movê-la para src/providers/<id>/).
 const BACKGROUND_PROVIDERS: Record<SocialProvider, BackgroundProviderFacet> = {
-  x: { id: "x", processCapture: processXCapture },
+  x: xProvider,
   instagram: { id: "instagram", processCapture: processInstagramCapture },
   linkedin: { id: "linkedin", processCapture: processLinkedInCapture },
 };
@@ -817,16 +751,7 @@ function reprocessPayloads(store: BackgroundStore) {
 // Export v3
 // ---------------------------------------------------------------------------
 
-function buildPlatformDataX(store: BackgroundStore): ExportV3PlatformX {
-  const xstore = store.platforms.x;
-  return {
-    content: Object.values(xstore.tweets).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
-    engagers: {
-      likes_by_tweet: xstore.favoriters,
-      replies: Object.values(xstore.communityReplies),
-    },
-  };
-}
+// buildPlatformDataX → src/providers/x/index.ts
 
 function buildCommentTree(comments: SocialComment[]): ExportComment[] {
   const byId = new Map<string, ExportComment>();
@@ -1036,20 +961,7 @@ function buildPlatformDataLinkedin(store: BackgroundStore): ExportV3PlatformLink
   return { content };
 }
 
-function computeSummaryX(store: BackgroundStore): ExportSummaryX {
-  const xstore = store.platforms.x;
-  const pubs = Object.values(xstore.publications);
-  const tweets = Object.values(xstore.tweets);
-  return {
-    total_content: pubs.length,
-    total_likes: pubs.reduce((s, p) => s + p.metrics.like_count, 0),
-    total_retweets: tweets.reduce((s, t) => s + t.metrics.retweet_count, 0),
-    total_replies: Object.values(xstore.commentsByPublication).flat().length,
-    total_quotes: tweets.reduce((s, t) => s + t.metrics.quote_count, 0),
-    total_bookmarks: tweets.reduce((s, t) => s + t.metrics.bookmark_count, 0),
-    total_views: pubs.reduce((s, p) => s + p.metrics.view_count, 0),
-  };
-}
+// computeSummaryX → src/providers/x/index.ts
 
 function computeSummaryInstagram(store: BackgroundStore): ExportSummaryInstagram {
   const istore = store.platforms.instagram;
