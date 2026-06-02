@@ -66,6 +66,12 @@ export type SocialPublication = {
   reposted_publication?: Pick<SocialPublication, "author" | "metrics" | "publication_id" | "text">;
   reposted_publication_id?: null | string;
   shortcode?: string;
+
+  // Provenance do Scope (#9): qual modo/valor de coleta capturou esta publicação.
+  // Campos INTERNOS ao store — o exporter v3 NÃO os inclui, então permanecem
+  // opcionais e fora do golden-master.
+  scope_mode?: string;
+  scope_value?: string;
 };
 
 export type SocialComment = {

@@ -19,7 +19,7 @@ import type {
   SocialComment,
 } from "../../shared/domain";
 import type { CapturedPayloadMessage } from "../../shared/messages";
-import type { BackgroundProviderFacet } from "../contract";
+import type { BackgroundProviderFacet, ScopeMode } from "../contract";
 import { publicationKey } from "../shared/utils";
 import {
   linkedinFeedAccountInfo,
@@ -358,6 +358,18 @@ export function computeSummaryLinkedin(store: BackgroundStore): ExportSummaryLin
     total_audience_interactions: allEngagers.size,
   };
 }
+
+// Modos de Scope declaráveis (#9). O filtro real continua dentro do parser
+// (linkedinFeedToPublications/linkedinFeedToPosts), que casa pelo NOME da organização
+// via substring (actorInfo.name.includes(handle)); selects() espelha esse comportamento
+// — casa quando o nome do autor da publicação contém o valor (org name), não igualdade.
+export const scopeModes: ScopeMode[] = [
+  {
+    id: "profile",
+    label: "Profile",
+    selects: (pub, value) => pub.author.name?.toLowerCase().includes(value.toLowerCase()) ?? false,
+  },
+];
 
 export const linkedinProvider: BackgroundProviderFacet = {
   id: "linkedin",

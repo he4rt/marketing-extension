@@ -9,7 +9,7 @@ import type {
   ExportV3PlatformX,
 } from "../../shared/domain";
 import type { CapturedPayloadMessage } from "../../shared/messages";
-import type { BackgroundProviderFacet } from "../contract";
+import type { BackgroundProviderFacet, ScopeMode } from "../contract";
 import { publicationKey } from "../shared/utils";
 import {
   accountInfoFromUser,
@@ -113,6 +113,17 @@ export function computeSummaryX(store: BackgroundStore): ExportSummaryX {
     total_views: pubs.reduce((s, p) => s + p.metrics.view_count, 0),
   };
 }
+
+// Modos de Scope declaráveis (#9). O filtro real continua dentro de processXCapture
+// (compara author.screen_name com o handle rastreado); aqui só tornamos o modo
+// "profile" declarável — selects() casa pelo username do autor (= screen_name no X).
+export const scopeModes: ScopeMode[] = [
+  {
+    id: "profile",
+    label: "Profile",
+    selects: (pub, value) => pub.author.username?.toLowerCase() === value.toLowerCase(),
+  },
+];
 
 export const xProvider: BackgroundProviderFacet = {
   id: "x",

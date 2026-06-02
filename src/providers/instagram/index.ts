@@ -22,7 +22,7 @@ import type {
   CapturedPayloadMessage,
   VisibleCommentsMessage,
 } from "../../shared/messages";
-import type { BackgroundProviderFacet } from "../contract";
+import type { BackgroundProviderFacet, ScopeMode } from "../contract";
 import { publicationKey } from "../shared/utils";
 import {
   extractInstagramComments,
@@ -370,6 +370,18 @@ export function computeSummaryInstagram(store: BackgroundStore): ExportSummaryIn
     total_views: pubs.reduce((s, p) => s + p.metrics.view_count, 0),
   };
 }
+
+// Modos de Scope declaráveis (#9). O filtro real continua dentro de
+// processInstagramCapture / instagramPublicationAllowedForComments (compara
+// author.username com o handle); aqui só tornamos o modo "profile" declarável —
+// selects() casa pelo username do autor.
+export const scopeModes: ScopeMode[] = [
+  {
+    id: "profile",
+    label: "Profile",
+    selects: (pub, value) => pub.author.username?.toLowerCase() === value.toLowerCase(),
+  },
+];
 
 export const instagramProvider: BackgroundProviderFacet = {
   id: "instagram",
