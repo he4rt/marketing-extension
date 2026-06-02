@@ -35,17 +35,14 @@ export function processXCapture(store: BackgroundStore, request: CapturedPayload
           const authorResult = rawResult.core?.user_results?.result;
           const info = accountInfoFromUser(authorResult || {}, tweet);
           xstore.accountInfo = info;
-          store.accountInfo = info;
           store.trackedProfiles.x = accountInfoToTrackedProfile(info);
         }
         xstore.tweets[tweet.tweet_id] = tweet;
-        store.tweets[tweet.tweet_id] = tweet;
         storePublication(store, publication);
       }
 
       if (tweet.in_reply_to_screen_name?.toLowerCase() === handle && authorHandle !== handle) {
         xstore.communityReplies[tweet.tweet_id] = publication;
-        store.communityReplies[tweet.tweet_id] = publication;
         storePublication(store, publication);
         storeEngagement(store, {
           provider: "x",
@@ -65,11 +62,9 @@ export function processXCapture(store: BackgroundStore, request: CapturedPayload
     if (tweetIdMatch && users.length) {
       const tweetId = tweetIdMatch[1] || "";
       if (!xstore.favoriters[tweetId]) xstore.favoriters[tweetId] = [];
-      if (!store.favoriters[tweetId]) store.favoriters[tweetId] = [];
       const existing = new Set(xstore.favoriters[tweetId].map((u) => u.rest_id));
       const freshUsers = users.filter((u) => !existing.has(u.rest_id));
       xstore.favoriters[tweetId].push(...freshUsers);
-      store.favoriters[tweetId].push(...freshUsers);
       for (const user of freshUsers) {
         storeEngagement(store, favoriterToEngagement(tweetId, user));
       }
@@ -82,7 +77,6 @@ export function processXCapture(store: BackgroundStore, request: CapturedPayload
         user.core?.screen_name?.toLowerCase() === trackedHandleForProvider(store, "x").toLowerCase()) {
       const info = accountInfoFromUser(user);
       xstore.accountInfo = info;
-      store.accountInfo = info;
       store.trackedProfiles.x = accountInfoToTrackedProfile(info);
     }
   }

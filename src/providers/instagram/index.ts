@@ -59,7 +59,6 @@ function resolveInstagramPublicationId(store: BackgroundStore, publicationId: st
   if (publicationId && !/^\d+$/.test(publicationId)) {
     const placeholderId = `shortcode:${publicationId}`;
     istore.publicationIdsByShortcode[publicationId] = placeholderId;
-    store.instagramPublicationIdsByShortcode[publicationId] = placeholderId;
     return placeholderId;
   }
   return publicationId;
@@ -153,8 +152,6 @@ function migratePublicationRelations(
 
   migrateComments(istore.commentsByPublication, istore.commentsByPublication);
   migrateEngagements(istore.engagementsByPublication, istore.engagementsByPublication);
-  migrateComments(store.commentsByPublication, store.commentsByPublication);
-  migrateEngagements(store.engagementsByPublication, store.engagementsByPublication);
 }
 
 export function processInstagramCapture(store: BackgroundStore, request: CapturedPayloadMessage) {
@@ -177,7 +174,6 @@ export function processInstagramCapture(store: BackgroundStore, request: Capture
           migratePublicationRelations(store, prevId, newId);
         }
         istore.publicationIdsByShortcode[publication.shortcode] = newId;
-        store.instagramPublicationIdsByShortcode[publication.shortcode] = newId;
       }
       if (publication.author.username.toLowerCase() === handle) {
         store.trackedProfiles.instagram = profileFromPublication(publication);
@@ -266,7 +262,6 @@ export function processVisibleInstagramComments(
         text: vc.text,
       };
       istore.visibleComments.push(entry);
-      store.instagramVisibleComments.push(entry);
     }
 
     if (!shouldStoreNormalized) continue;

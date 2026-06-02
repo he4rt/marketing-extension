@@ -32,8 +32,8 @@ export function recordRawPayload(
 }
 
 // Helpers de armazenamento compartilhados por todos os providers.
-// Escrita dual (store legado plano + per-platform) durante a migração strangler;
-// os ramos legados saem na fatia de limpeza (#8).
+// Fonte única: store per-platform (store.platforms.*). O dual-write para os stores
+// legados planos foi removido na fatia #8; estes helpers escrevem só no per-platform.
 
 export function emptyMetrics(): SocialMetrics {
   return {
@@ -50,7 +50,9 @@ export function trackedHandleForProvider(store: BackgroundStore, provider: Socia
 export function storePublication(store: BackgroundStore, publication: SocialPublication) {
   const provider = publication.provider;
   const key = publicationKey(provider, publication.publication_id);
-  const existing = store.publications[key];
+  // Fonte única: store per-platform (x/instagram/linkedin — todos NormalizedStore).
+  const pstore = store.platforms[provider] as NormalizedStore;
+  const existing = pstore.publications[key];
 
   const merged = {
     ...existing,
@@ -63,37 +65,20 @@ export function storePublication(store: BackgroundStore, publication: SocialPubl
     ),
   };
 
-  // Legacy flat store
-  store.publications[key] = merged;
-
-  // Per-platform store
-  if (provider === "x" || provider === "instagram") {
-    const pstore = store.platforms[provider] as NormalizedStore;
-    pstore.publications[key] = merged;
-  }
+  pstore.publications[key] = merged;
 
   // Clean up placeholder when real publication arrives for same shortcode
   if (provider === "instagram" && publication.shortcode) {
+    const istore = store.platforms.instagram;
     const placeholderKey = publicationKey("instagram", `shortcode:${publication.shortcode}`);
-    if (placeholderKey !== key && store.publications[placeholderKey]) {
-      const placeholder = store.publications[placeholderKey];
+    if (placeholderKey !== key && istore.publications[placeholderKey]) {
+      const placeholder = istore.publications[placeholderKey];
       if (!merged.visible_order && placeholder.visible_order) {
         merged.visible_order = placeholder.visible_order;
-        store.publications[key] = merged;
-        const pstore = store.platforms.instagram;
-        pstore.publications[key] = merged;
+        istore.publications[key] = merged;
       }
-      delete store.publications[placeholderKey];
-      const istore = store.platforms.instagram;
       delete istore.publications[placeholderKey];
 
-      if (store.commentsByPublication[placeholderKey]) {
-        store.commentsByPublication[key] = [
-          ...(store.commentsByPublication[key] || []),
-          ...store.commentsByPublication[placeholderKey],
-        ];
-        delete store.commentsByPublication[placeholderKey];
-      }
       if (istore.commentsByPublication[placeholderKey]) {
         istore.commentsByPublication[key] = [
           ...(istore.commentsByPublication[key] || []),
@@ -108,42 +93,28 @@ export function storePublication(store: BackgroundStore, publication: SocialPubl
 export function storeComment(store: BackgroundStore, comment: SocialComment) {
   const provider = comment.provider;
   const key = publicationKey(provider, comment.publication_id);
-  const existing = store.commentsByPublication[key] || [];
-  const existingIndex = existing.findIndex((c) => c.comment_id === comment.comment_id);
   const entry = { ...comment, captured_at: comment.captured_at || new Date().toISOString() };
 
+  // Fonte única: store per-platform (x/instagram/linkedin — todos NormalizedStore).
+  const pstore = store.platforms[provider] as NormalizedStore;
+  const existing = pstore.commentsByPublication[key] || [];
+  const existingIndex = existing.findIndex((c) => c.comment_id === comment.comment_id);
   if (existingIndex === -1) {
-    store.commentsByPublication[key] = [...existing, entry];
+    pstore.commentsByPublication[key] = [...existing, entry];
   } else {
-    store.commentsByPublication[key] = existing.map((c, i) =>
+    pstore.commentsByPublication[key] = existing.map((c, i) =>
       i === existingIndex ? { ...c, ...entry, captured_at: c.captured_at || entry.captured_at } : c,
     );
-  }
-
-  // Per-platform store
-  if (provider === "x" || provider === "instagram") {
-    const pstore = store.platforms[provider] as NormalizedStore;
-    const pexisting = pstore.commentsByPublication[key] || [];
-    if (!pexisting.some((c) => c.comment_id === comment.comment_id)) {
-      pstore.commentsByPublication[key] = [...pexisting, entry];
-    }
   }
 }
 
 export function storeEngagement(store: BackgroundStore, engagement: SocialEngagement) {
   const provider = engagement.provider;
   const key = publicationKey(provider, engagement.publication_id);
-  const existing = store.engagementsByPublication[key] || [];
+  // Fonte única: store per-platform (x/instagram/linkedin — todos NormalizedStore).
+  const pstore = store.platforms[provider] as NormalizedStore;
+  const existing = pstore.engagementsByPublication[key] || [];
   if (!existing.some((e) => e.engagement_id === engagement.engagement_id)) {
-    store.engagementsByPublication[key] = [...existing, engagement];
-  }
-
-  // Per-platform store
-  if (provider === "x" || provider === "instagram") {
-    const pstore = store.platforms[provider] as NormalizedStore;
-    const pexisting = pstore.engagementsByPublication[key] || [];
-    if (!pexisting.some((e) => e.engagement_id === engagement.engagement_id)) {
-      pstore.engagementsByPublication[key] = [...pexisting, engagement];
-    }
+    pstore.engagementsByPublication[key] = [...existing, engagement];
   }
 }

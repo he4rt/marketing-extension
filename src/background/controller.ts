@@ -132,14 +132,11 @@ export function createStore(trackedHandle = ""): BackgroundStore {
     trackedHandles: {},
     trackedProfiles: {},
 
-    // Legacy flat stores
+    // Stores planos legados — DESCONTINUADOS (#8). Mantidos vazios apenas pelos
+    // testes que ainda referenciam estes campos (ver BackgroundStore em domain.ts).
     publications: {},
     commentsByPublication: {},
-    engagementsByPublication: {},
     instagramPublicationIdsByShortcode: {},
-    instagramVisiblePublications: [],
-    instagramVisibleComments: [],
-    communityReplies: {},
     tweets: {},
     favoriters: {},
     accountInfo: null,
@@ -225,16 +222,16 @@ function clearDisplayedData(store: BackgroundStore) {
 }
 
 function clearNormalizedData(store: BackgroundStore) {
-  store.publications = {};
-  store.commentsByPublication = {};
-  store.engagementsByPublication = {};
-  store.instagramPublicationIdsByShortcode = {};
-  store.instagramVisiblePublications = [];
-  store.instagramVisibleComments = [];
-  store.communityReplies = {};
-  store.tweets = {};
-  store.favoriters = {};
-  store.accountInfo = null;
+  // Per-platform stores (fonte única após a remoção do dual-write). O reprocess
+  // depende disso para reconstruir os dados derivados a partir dos payloads crus.
+  store.platforms.x = emptyXStore();
+  store.platforms.instagram = emptyInstagramStore();
+  // LinkedIn: preserva o accountInfo (vem do feed e alimenta trackedAccountUrn),
+  // zera o restante para reconstrução limpa.
+  const linkedinAccountInfo = store.platforms.linkedin.extra.accountInfo;
+  store.platforms.linkedin = emptyLinkedInStore();
+  store.platforms.linkedin.extra.accountInfo = linkedinAccountInfo;
+
   store.trackedProfiles = {};
   store.nextCaptureOrder = 1;
 }
@@ -261,8 +258,8 @@ function sortPublications(publications: SocialPublication[]) {
 }
 
 function reprocessPayloads(store: BackgroundStore) {
-  const visiblePublications = [...store.instagramVisiblePublications];
-  const visibleComments = [...store.instagramVisibleComments];
+  const visiblePublications = [...store.platforms.instagram.visiblePublications];
+  const visibleComments = [...store.platforms.instagram.visibleComments];
   const providerPageUrls = { ...store.providerPageUrls };
   const pageSessionKeys = { ...store.pageSessionKeys };
   const trackedHandles = { ...store.trackedHandles };
@@ -280,8 +277,10 @@ function reprocessPayloads(store: BackgroundStore) {
   );
 
   clearNormalizedData(store);
-  store.instagramVisiblePublications = visiblePublications;
-  store.instagramVisibleComments = visibleComments;
+  // Restaura os itens visíveis (DOM) no store per-platform do Instagram antes de
+  // re-seedar placeholders/comentários. visibleComments é refeito pelo loop abaixo;
+  // visiblePublications precisa ser restaurado pois alimenta o filtro de comentários.
+  store.platforms.instagram.visiblePublications = visiblePublications;
   store.pageSessionKeys = pageSessionKeys;
   store.providerPageUrls = providerPageUrls;
   store.trackedHandles = trackedHandles;
@@ -400,6 +399,9 @@ function buildExportJSON(store: BackgroundStore): ExportJSON {
 
 function storeForProvider(store: BackgroundStore, provider: null | SocialProvider) {
   if (!provider) return store;
+  // buildExportJSON já lê exclusivamente store.platforms.* + handles/profiles, então
+  // o store escopado só precisa montar platforms[provider] real (demais vazios) e
+  // carregar os metadados compartilhados. Sem mais cópia de stores planos.
   const scoped = createStore(store.trackedHandle);
   scoped.activeProvider = store.activeProvider;
   scoped.lastUpdated = store.lastUpdated;
@@ -407,41 +409,50 @@ function storeForProvider(store: BackgroundStore, provider: null | SocialProvide
   scoped.pageSessionKey = store.pageSessionKey;
   scoped.pageSessionKeys = store.pageSessionKeys;
   scoped.providerPageUrls = store.providerPageUrls;
-  scoped.publications = Object.fromEntries(
-    Object.entries(store.publications).filter(([, p]) => p.provider === provider),
-  );
   scoped.endpoints = Object.fromEntries(
     Object.entries(store.endpoints).filter(([, e]) => e.provider === provider),
-  );
-  scoped.commentsByPublication = Object.fromEntries(
-    Object.entries(store.commentsByPublication)
-      .map(([k, comments]) => ({ key: k, comments: comments.filter((c) => c.provider === provider) }))
-      .filter(({ comments }) => comments.length)
-      .map(({ key, comments }) => [key, comments]),
-  );
-  scoped.engagementsByPublication = Object.fromEntries(
-    Object.entries(store.engagementsByPublication)
-      .map(([k, engagements]) => ({ key: k, engagements: engagements.filter((e) => e.provider === provider) }))
-      .filter(({ engagements }) => engagements.length)
-      .map(({ key, engagements }) => [key, engagements]),
   );
   scoped.trackedProfiles = store.trackedProfiles[provider]
     ? { [provider]: store.trackedProfiles[provider] } : {};
 
   scoped.platforms = { ...scoped.platforms, [provider]: store.platforms[provider] };
-
-  if (provider === "instagram") {
-    scoped.instagramPublicationIdsByShortcode = store.instagramPublicationIdsByShortcode;
-    scoped.instagramVisiblePublications = store.instagramVisiblePublications;
-    scoped.instagramVisibleComments = store.instagramVisibleComments;
-  }
-  if (provider === "x") {
-    scoped.communityReplies = store.communityReplies;
-    scoped.tweets = store.tweets;
-    scoped.favoriters = store.favoriters;
-    scoped.accountInfo = store.accountInfo;
-  }
   return scoped;
+}
+
+// Leitores per-platform para GET_PUBLICATIONS/GET_TWEETS (substituem os flats).
+// Quando provider é null, faz a UNIÃO dos três stores normalizados — preservando
+// os totais cross-provider que os testes verificam.
+const NORMALIZED_PLATFORMS: SocialProvider[] = ["x", "instagram", "linkedin"];
+
+function platformsForProvider(provider: null | SocialProvider): SocialProvider[] {
+  return provider ? [provider] : NORMALIZED_PLATFORMS;
+}
+
+function collectPublications(store: BackgroundStore, provider: null | SocialProvider) {
+  return platformsForProvider(provider).flatMap((p) =>
+    Object.values((store.platforms[p] as NormalizedStore).publications),
+  );
+}
+
+function collectComments(store: BackgroundStore, provider: null | SocialProvider) {
+  return platformsForProvider(provider).flatMap((p) =>
+    Object.values((store.platforms[p] as NormalizedStore).commentsByPublication).flat(),
+  );
+}
+
+function collectEngagements(store: BackgroundStore, provider: null | SocialProvider) {
+  return platformsForProvider(provider).flatMap((p) =>
+    Object.values((store.platforms[p] as NormalizedStore).engagementsByPublication).flat(),
+  );
+}
+
+// Total de publicações somando os três stores normalizados (substitui o
+// Object.keys(store.publications).length do store legado plano).
+function totalPublicationCount(store: BackgroundStore) {
+  return NORMALIZED_PLATFORMS.reduce(
+    (sum, p) => sum + Object.keys((store.platforms[p] as NormalizedStore).publications).length,
+    0,
+  );
 }
 
 function endpointSummary(store: BackgroundStore) {
@@ -491,11 +502,10 @@ export function handleRuntimeMessage(
     const istore = store.platforms.instagram;
     const filteredItems = visibleInstagramItemsForHandle(store, items);
     istore.visiblePublications = filteredItems;
-    store.instagramVisiblePublications = filteredItems;
     filteredItems.forEach((item, index) => {
       const publicationId = istore.publicationIdsByShortcode[item.shortcode] || `shortcode:${item.shortcode}`;
       const key = publicationKey("instagram", publicationId);
-      const pub = store.publications[key];
+      const pub = istore.publications[key];
       if (pub) {
         pub.visible_order = index + 1;
         pub.visible_url = item.url;
@@ -527,7 +537,7 @@ export function handleRuntimeMessage(
     if (capture.pageUrl) store.providerPageUrls[capture.provider] = capture.pageUrl;
     recordRawPayload(store, capture.provider, capture.endpoint, capture.payload, capture.timestamp);
     BACKGROUND_PROVIDERS[capture.provider].processCapture(store, capture);
-    context.log?.(`[Social Interceptor] ${capture.provider}:${capture.endpoint} (publicações: ${Object.keys(store.publications).length})`);
+    context.log?.(`[Social Interceptor] ${capture.provider}:${capture.endpoint} (publicações: ${totalPublicationCount(store)})`);
     return { success: true };
   }
 
@@ -539,7 +549,7 @@ export function handleRuntimeMessage(
     if (provider) store.trackedHandles[provider] = request.handle;
     context.persistHandle?.(request.handle);
     reprocessPayloads(store);
-    return { success: true, publicationCount: Object.keys(store.publications).length, tweetCount: Object.keys(store.tweets).length };
+    return { success: true, publicationCount: totalPublicationCount(store), tweetCount: Object.keys(store.platforms.x.tweets).length };
   }
 
   if (request.action === "GET_HANDLE") {
@@ -550,16 +560,16 @@ export function handleRuntimeMessage(
   // Publications (legacy)
   if (request.action === "GET_PUBLICATIONS" || request.action === "GET_TWEETS") {
     const provider = request.provider ?? store.activeProvider;
-    const publications = sortPublications(
-      Object.values(store.publications).filter((p) => !provider || p.provider === provider),
-    );
-    const comments = Object.values(store.commentsByPublication).flat().filter((c) => !provider || c.provider === provider);
-    const engagements = Object.values(store.engagementsByPublication).flat().filter((e) => !provider || e.provider === provider);
+    const xstore = store.platforms.x;
+    const publications = sortPublications(collectPublications(store, provider));
+    const comments = collectComments(store, provider);
+    const engagements = collectEngagements(store, provider);
+    const xScoped = !provider || provider === "x";
     return {
       publications, commentsCount: comments.length, engagementsCount: engagements.length,
-      tweets: provider && provider !== "x" ? [] : Object.values(store.tweets).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
-      replyCount: provider && provider !== "x" ? 0 : Object.keys(store.communityReplies).length,
-      accountInfo: provider && provider !== "x" ? null : store.accountInfo,
+      tweets: xScoped ? Object.values(xstore.tweets).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()) : [],
+      replyCount: xScoped ? Object.keys(xstore.communityReplies).length : 0,
+      accountInfo: xScoped ? xstore.accountInfo : null,
       trackedProfiles: store.trackedProfiles, lastUpdated: store.lastUpdated,
     };
   }

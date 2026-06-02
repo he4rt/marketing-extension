@@ -176,7 +176,7 @@ export function processLinkedInCapture(store: BackgroundStore, request: Captured
 }
 
 function findLinkedInPublicationByUrn(store: BackgroundStore, urn: string) {
-  return Object.values(store.publications).find(
+  return Object.values(store.platforms.linkedin.publications).find(
     (p) => p.provider === "linkedin" && (p.publication_id === urn || p.reposted_publication_id === urn),
   );
 }
