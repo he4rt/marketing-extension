@@ -4,6 +4,14 @@ import {
   extractInstagramPublications,
   profileFromPublication,
 } from "../providers/instagram/parser";
+import {
+  linkedinFeedAccountInfo,
+  linkedinFeedToPosts,
+  linkedinFeedToPublications,
+  linkedinParseComments,
+  linkedinParseReactions,
+  linkedinParseReposts,
+} from "../providers/linkedin/parser";
 import { publicationKey } from "../providers/shared/utils";
 import {
   accountInfoFromUser,
@@ -14,12 +22,35 @@ import {
 } from "../providers/x/parser";
 import type {
   BackgroundStore,
+  EndpointStore,
+  ExportComment,
   ExportJSON,
+  ExportLinkedInPost,
+  ExportSummaryInstagram,
+  ExportSummaryLinkedin,
+  ExportSummaryX,
+  ExportV3Meta,
+  ExportV3PlatformInstagram,
+  ExportV3PlatformLinkedin,
+  ExportV3PlatformX,
+  Favoriter,
+  InstagramStore,
+  LinkedInEngagementMetrics,
+  LinkedInEngagerStore,
+  LinkedInPostData,
+  LinkedInReactionUser,
+  LinkedInRepostEntry,
+  LinkedInRepostStore,
+  LinkedInStore,
+  NormalizedStore,
+  SocialActor,
   SocialComment,
   SocialEngagement,
   SocialMetrics,
   SocialProvider,
   SocialPublication,
+  TweetData,
+  XStore,
 } from "../shared/domain";
 import type {
   CapturedPayloadMessage,
@@ -34,12 +65,63 @@ export type MessageContext = {
   persistHandle?: (handle: string) => void;
 };
 
+const ALL_PROVIDERS: SocialProvider[] = ["instagram", "linkedin", "x"];
+
+function emptyXStore(): XStore {
+  return {
+    tweets: {},
+    favoriters: {},
+    accountInfo: null,
+    communityReplies: {},
+    publications: {},
+    commentsByPublication: {},
+    engagementsByPublication: {},
+  };
+}
+
+function emptyInstagramStore(): InstagramStore {
+  return {
+    publicationIdsByShortcode: {},
+    visiblePublications: [],
+    visibleComments: [],
+    publications: {},
+    commentsByPublication: {},
+    engagementsByPublication: {},
+  };
+}
+
+function emptyLinkedInStore(): LinkedInStore {
+  return {
+    posts: {},
+    reactions: {},
+    reposts: {},
+    comments: {},
+    commentReactions: {},
+    accountInfo: null,
+    feedOrder: [],
+  };
+}
+
 export function createStore(trackedHandle = ""): BackgroundStore {
   return {
     activeProvider: null,
     archivedEndpoints: {},
     trackedHandle,
     endpoints: {},
+    platforms: {
+      x: emptyXStore(),
+      instagram: emptyInstagramStore(),
+      linkedin: emptyLinkedInStore(),
+    },
+    lastUpdated: null,
+    nextCaptureOrder: 1,
+    pageSessionKey: "",
+    pageSessionKeys: {},
+    providerPageUrls: {},
+    trackedHandles: {},
+    trackedProfiles: {},
+
+    // Legacy flat stores
     publications: {},
     commentsByPublication: {},
     engagementsByPublication: {},
@@ -47,18 +129,15 @@ export function createStore(trackedHandle = ""): BackgroundStore {
     instagramVisiblePublications: [],
     instagramVisibleComments: [],
     communityReplies: {},
-    trackedHandles: {},
-    trackedProfiles: {},
-    nextCaptureOrder: 1,
-    pageSessionKey: "",
     tweets: {},
     favoriters: {},
     accountInfo: null,
-    lastUpdated: null,
-    pageSessionKeys: {},
-    providerPageUrls: {},
   };
 }
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
 function getEndpointStore(store: BackgroundStore, provider: SocialProvider, endpoint: string) {
   const key = `${provider}:${endpoint}`;
@@ -86,24 +165,246 @@ function normalizeCapture(request: RuntimeMessage): CapturedPayloadMessage | nul
 
 function emptyMetrics(): SocialMetrics {
   return {
-    bookmark_count: 0,
-    comment_count: 0,
-    like_count: 0,
-    quote_count: 0,
-    reply_count: 0,
-    repost_count: 0,
-    retweet_count: 0,
-    save_count: 0,
-    view_count: 0,
+    bookmark_count: 0, comment_count: 0, like_count: 0,
+    quote_count: 0, reply_count: 0, repost_count: 0,
+    retweet_count: 0, save_count: 0, view_count: 0,
   };
 }
 
+
+// ---------------------------------------------------------------------------
+// Normalized data storage (dual-write: legacy + per-platform)
+// ---------------------------------------------------------------------------
+
+function platformNormalizedKey(provider: SocialProvider): keyof NormalizedStore {
+  return "publications";
+}
+
+function platformStoreFor(store: BackgroundStore, provider: SocialProvider): NormalizedStore {
+  if (provider === "x") return store.platforms.x;
+  if (provider === "instagram") return store.platforms.instagram;
+  if (provider === "linkedin") return { publications: {}, commentsByPublication: {}, engagementsByPublication: {} };
+  return { publications: {}, commentsByPublication: {}, engagementsByPublication: {} };
+}
+
+function platformNormalizedExists(store: BackgroundStore, provider: SocialProvider): boolean {
+  return provider === "x" || provider === "instagram";
+}
+
+function storePublication(store: BackgroundStore, publication: SocialPublication) {
+  const provider = publication.provider;
+  const key = publicationKey(provider, publication.publication_id);
+  const existing = store.publications[key];
+
+  const merged = {
+    ...existing,
+    ...publication,
+    captured_at: existing?.captured_at || publication.captured_at || new Date().toISOString(),
+    capture_order: existing?.capture_order || publication.capture_order || store.nextCaptureOrder++,
+    capture_priority: Math.min(
+      existing?.capture_priority ?? Number.MAX_SAFE_INTEGER,
+      publication.capture_priority ?? 100,
+    ),
+  };
+
+  // Legacy flat store
+  store.publications[key] = merged;
+
+  // Per-platform store
+  if (provider === "x" || provider === "instagram") {
+    const pstore = store.platforms[provider] as NormalizedStore;
+    pstore.publications[key] = merged;
+  }
+
+  // Clean up placeholder when real publication arrives for same shortcode
+  if (provider === "instagram" && publication.shortcode) {
+    const placeholderKey = publicationKey("instagram", `shortcode:${publication.shortcode}`);
+    if (placeholderKey !== key && store.publications[placeholderKey]) {
+      const placeholder = store.publications[placeholderKey];
+      if (!merged.visible_order && placeholder.visible_order) {
+        merged.visible_order = placeholder.visible_order;
+        store.publications[key] = merged;
+        const pstore = store.platforms.instagram;
+        pstore.publications[key] = merged;
+      }
+      delete store.publications[placeholderKey];
+      const istore = store.platforms.instagram;
+      delete istore.publications[placeholderKey];
+
+      if (store.commentsByPublication[placeholderKey]) {
+        store.commentsByPublication[key] = [
+          ...(store.commentsByPublication[key] || []),
+          ...store.commentsByPublication[placeholderKey],
+        ];
+        delete store.commentsByPublication[placeholderKey];
+      }
+      if (istore.commentsByPublication[placeholderKey]) {
+        istore.commentsByPublication[key] = [
+          ...(istore.commentsByPublication[key] || []),
+          ...istore.commentsByPublication[placeholderKey],
+        ];
+        delete istore.commentsByPublication[placeholderKey];
+      }
+    }
+  }
+}
+
+function storeComment(store: BackgroundStore, comment: SocialComment) {
+  const provider = comment.provider;
+  const key = publicationKey(provider, comment.publication_id);
+  const existing = store.commentsByPublication[key] || [];
+  const existingIndex = existing.findIndex((c) => c.comment_id === comment.comment_id);
+  const entry = { ...comment, captured_at: comment.captured_at || new Date().toISOString() };
+
+  if (existingIndex === -1) {
+    store.commentsByPublication[key] = [...existing, entry];
+  } else {
+    store.commentsByPublication[key] = existing.map((c, i) =>
+      i === existingIndex ? { ...c, ...entry, captured_at: c.captured_at || entry.captured_at } : c,
+    );
+  }
+
+  // Per-platform store
+  if (provider === "x" || provider === "instagram") {
+    const pstore = store.platforms[provider] as NormalizedStore;
+    const pexisting = pstore.commentsByPublication[key] || [];
+    if (!pexisting.some((c) => c.comment_id === comment.comment_id)) {
+      pstore.commentsByPublication[key] = [...pexisting, entry];
+    }
+  }
+}
+
+function storeEngagement(store: BackgroundStore, engagement: SocialEngagement) {
+  const provider = engagement.provider;
+  const key = publicationKey(provider, engagement.publication_id);
+  const existing = store.engagementsByPublication[key] || [];
+  if (!existing.some((e) => e.engagement_id === engagement.engagement_id)) {
+    store.engagementsByPublication[key] = [...existing, engagement];
+  }
+
+  // Per-platform store
+  if (provider === "x" || provider === "instagram") {
+    const pstore = store.platforms[provider] as NormalizedStore;
+    const pexisting = pstore.engagementsByPublication[key] || [];
+    if (!pexisting.some((e) => e.engagement_id === engagement.engagement_id)) {
+      pstore.engagementsByPublication[key] = [...pexisting, engagement];
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Capture processing
+// ---------------------------------------------------------------------------
+
+function trackedHandleForProvider(store: BackgroundStore, provider: SocialProvider) {
+  return (store.trackedHandles[provider] ?? store.trackedHandle).trim();
+}
+
+function processXCapture(store: BackgroundStore, request: CapturedPayloadMessage) {
+  const trackedHandle = trackedHandleForProvider(store, "x");
+  const handle = trackedHandle.toLowerCase();
+  const xstore = store.platforms.x;
+
+  if (request.endpoint === "UserTweets") {
+    processUserTweetsPayload(request.payload, trackedHandle, (tweet, publication, rawResult) => {
+      const authorHandle = tweet.author.screen_name.toLowerCase();
+
+      if (authorHandle === handle) {
+        if (!xstore.accountInfo && tweet.author.rest_id) {
+          const authorResult = rawResult.core?.user_results?.result;
+          const info = accountInfoFromUser(authorResult || {}, tweet);
+          xstore.accountInfo = info;
+          store.accountInfo = info;
+          store.trackedProfiles.x = accountInfoToTrackedProfile(info);
+        }
+        xstore.tweets[tweet.tweet_id] = tweet;
+        store.tweets[tweet.tweet_id] = tweet;
+        storePublication(store, publication);
+      }
+
+      if (tweet.in_reply_to_screen_name?.toLowerCase() === handle && authorHandle !== handle) {
+        xstore.communityReplies[tweet.tweet_id] = publication;
+        store.communityReplies[tweet.tweet_id] = publication;
+        storePublication(store, publication);
+        storeEngagement(store, {
+          provider: "x",
+          publication_id: tweet.in_reply_to_tweet_id || tweet.tweet_id,
+          kind: "comment",
+          engagement_id: publicationKey("x", `${tweet.in_reply_to_tweet_id || tweet.tweet_id}:reply:${tweet.tweet_id}`),
+          actor: publication.author,
+          engaged_at: tweet.created_at,
+        });
+      }
+    });
+  }
+
+  if (request.endpoint === "Favoriters") {
+    const users = processFavoritersPayload(request.payload);
+    const tweetIdMatch = (request.pageUrl || "").match(/status\/(\d+)/);
+    if (tweetIdMatch && users.length) {
+      const tweetId = tweetIdMatch[1] || "";
+      if (!xstore.favoriters[tweetId]) xstore.favoriters[tweetId] = [];
+      if (!store.favoriters[tweetId]) store.favoriters[tweetId] = [];
+      const existing = new Set(xstore.favoriters[tweetId].map((u) => u.rest_id));
+      const freshUsers = users.filter((u) => !existing.has(u.rest_id));
+      xstore.favoriters[tweetId].push(...freshUsers);
+      store.favoriters[tweetId].push(...freshUsers);
+      for (const user of freshUsers) {
+        storeEngagement(store, favoriterToEngagement(tweetId, user));
+      }
+    }
+  }
+
+  if (request.endpoint === "UserByScreenName") {
+    const user = (request.payload as AnyRecord)?.data?.user?.result;
+    if (user && trackedHandleForProvider(store, "x") &&
+        user.core?.screen_name?.toLowerCase() === trackedHandleForProvider(store, "x").toLowerCase()) {
+      const info = accountInfoFromUser(user);
+      xstore.accountInfo = info;
+      store.accountInfo = info;
+      store.trackedProfiles.x = accountInfoToTrackedProfile(info);
+    }
+  }
+}
+
+function instagramShortcodeFromUrl(pageUrl?: string) {
+  if (!pageUrl) return "";
+  return pageUrl.match(/\/(?:p|reel|reels)\/([^/?#]+)/)?.[1] || "";
+}
+
+function resolveInstagramPublicationId(store: BackgroundStore, publicationId: string) {
+  const istore = store.platforms.instagram;
+  if (istore.publicationIdsByShortcode[publicationId]) {
+    return istore.publicationIdsByShortcode[publicationId];
+  }
+  if (publicationId && !/^\d+$/.test(publicationId)) {
+    const placeholderId = `shortcode:${publicationId}`;
+    istore.publicationIdsByShortcode[publicationId] = placeholderId;
+    store.instagramPublicationIdsByShortcode[publicationId] = placeholderId;
+    return placeholderId;
+  }
+  return publicationId;
+}
+
+function instagramPublicationAllowedForComments(store: BackgroundStore, shortcode: string) {
+  const istore = store.platforms.instagram;
+  const handle = trackedHandleForProvider(store, "instagram").toLowerCase();
+  if (!handle) return true;
+  const publicationId = istore.publicationIdsByShortcode[shortcode];
+  const key = publicationKey("instagram", shortcode);
+  const pub = istore.publications[key] ||
+    (publicationId && istore.publications[publicationKey("instagram", publicationId)]);
+  if (pub) return pub.author.username.toLowerCase() === handle;
+  return istore.visiblePublications.some(
+    (item) => item.shortcode === shortcode && (item.author?.username || "").toLowerCase() === handle,
+  );
+}
+
 function instagramPlaceholderPublication(
-  item: BackgroundStore["instagramVisiblePublications"][number],
+  item: InstagramStore["visiblePublications"][number],
   visibleOrder: number,
 ): SocialPublication {
-  const mediaType =
-    item.mediaType ||
+  const mediaType = item.mediaType ||
     (item.url.includes("/reel/") || item.url.includes("/reels/") ? "reel" : "unknown");
   const metrics = emptyMetrics();
   metrics.comment_count = item.metrics?.comment_count || 0;
@@ -143,123 +444,338 @@ function migratePublicationRelations(
   toPublicationId: string,
 ) {
   if (fromPublicationId === toPublicationId) return;
+  const istore = store.platforms.instagram;
   const fromKey = publicationKey("instagram", fromPublicationId);
   const toKey = publicationKey("instagram", toPublicationId);
 
-  if (store.commentsByPublication[fromKey]?.length) {
-    const existing = store.commentsByPublication[toKey] || [];
-    const existingIds = new Set(existing.map((comment) => comment.comment_id));
-    const migrated = store.commentsByPublication[fromKey].map((comment) => ({
-      ...comment,
-      publication_id: toPublicationId,
-    }));
-    store.commentsByPublication[toKey] = [
-      ...existing,
-      ...migrated.filter((comment) => !existingIds.has(comment.comment_id)),
-    ];
-    delete store.commentsByPublication[fromKey];
-  }
-
-  if (store.engagementsByPublication[fromKey]?.length) {
-    const existing = store.engagementsByPublication[toKey] || [];
-    const existingIds = new Set(existing.map((engagement) => engagement.engagement_id));
-    const migrated = store.engagementsByPublication[fromKey].map((engagement) => ({
-      ...engagement,
-      publication_id: toPublicationId,
-      engagement_id: engagement.engagement_id.replace(fromPublicationId, toPublicationId),
-    }));
-    store.engagementsByPublication[toKey] = [
-      ...existing,
-      ...migrated.filter((engagement) => !existingIds.has(engagement.engagement_id)),
-    ];
-    delete store.engagementsByPublication[fromKey];
-  }
-}
-
-function storePublication(store: BackgroundStore, publication: SocialPublication) {
-  let publicationToStore = publication;
-  let key = publicationKey(publication.provider, publication.publication_id);
-  let existing = store.publications[key];
-
-  if (publication.provider === "instagram" && publication.shortcode) {
-    const previousPublicationId = store.instagramPublicationIdsByShortcode[publication.shortcode];
-    if (previousPublicationId && previousPublicationId !== publication.publication_id) {
-      const previousKey = publicationKey("instagram", previousPublicationId);
-      const previous = store.publications[previousKey];
-      existing = previous && existing ? { ...previous, ...existing } : previous || existing;
-      delete store.publications[previousKey];
-      migratePublicationRelations(store, previousPublicationId, publication.publication_id);
+  const migrateComments = (src: Record<string, SocialComment[]>, dst: Record<string, SocialComment[]>) => {
+    if (src[fromKey]?.length) {
+      const existing = dst[toKey] || [];
+      const existingIds = new Set(existing.map((c) => c.comment_id));
+      const migrated = src[fromKey].map((c) => ({ ...c, publication_id: toPublicationId }));
+      dst[toKey] = [...existing, ...migrated.filter((c) => !existingIds.has(c.comment_id))];
+      delete src[fromKey];
     }
-    store.instagramPublicationIdsByShortcode[publication.shortcode] = publication.publication_id;
-    key = publicationKey(publication.provider, publication.publication_id);
-    publicationToStore = {
-      ...publication,
-      visible_order: publication.visible_order ?? existing?.visible_order,
-      visible_url: publication.visible_url || existing?.visible_url,
-      capture_order: existing?.capture_order || publication.capture_order,
-      captured_at: existing?.captured_at || publication.captured_at,
-      is_placeholder: Boolean(publication.is_placeholder),
-    };
-  }
-
-  store.publications[key] = {
-    ...existing,
-    ...publicationToStore,
-    captured_at:
-      existing?.captured_at || publicationToStore.captured_at || new Date().toISOString(),
-    capture_order:
-      existing?.capture_order || publicationToStore.capture_order || store.nextCaptureOrder++,
-    capture_priority: Math.min(
-      existing?.capture_priority ?? Number.MAX_SAFE_INTEGER,
-      publicationToStore.capture_priority ?? 100,
-    ),
   };
+
+  const migrateEngagements = (src: Record<string, SocialEngagement[]>, dst: Record<string, SocialEngagement[]>) => {
+    if (src[fromKey]?.length) {
+      const existing = dst[toKey] || [];
+      const existingIds = new Set(existing.map((e) => e.engagement_id));
+      const migrated = src[fromKey].map((e) => ({
+        ...e,
+        publication_id: toPublicationId,
+        engagement_id: e.engagement_id.replace(fromPublicationId, toPublicationId),
+      }));
+      dst[toKey] = [...existing, ...migrated.filter((e) => !existingIds.has(e.engagement_id))];
+      delete src[fromKey];
+    }
+  };
+
+  migrateComments(istore.commentsByPublication, istore.commentsByPublication);
+  migrateEngagements(istore.engagementsByPublication, istore.engagementsByPublication);
+  migrateComments(store.commentsByPublication, store.commentsByPublication);
+  migrateEngagements(store.engagementsByPublication, store.engagementsByPublication);
 }
 
-function sortPublications(publications: SocialPublication[]) {
-  return publications.sort((a, b) => {
-    const orderA = a.capture_order || Number.MAX_SAFE_INTEGER;
-    const orderB = b.capture_order || Number.MAX_SAFE_INTEGER;
-    const visibleA = a.visible_order ?? Number.MAX_SAFE_INTEGER;
-    const visibleB = b.visible_order ?? Number.MAX_SAFE_INTEGER;
-    if (visibleA !== visibleB) return visibleA - visibleB;
-    const priorityA = a.capture_priority ?? 100;
-    const priorityB = b.capture_priority ?? 100;
-    if (priorityA !== priorityB) return priorityA - priorityB;
-    if (orderA !== orderB) return orderA - orderB;
-    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-  });
-}
+function processInstagramCapture(store: BackgroundStore, request: CapturedPayloadMessage) {
+  const istore = store.platforms.instagram;
+  const handle = trackedHandleForProvider(store, "instagram").toLowerCase();
+  const publications = extractInstagramPublications(request.payload);
+  const pageShortcode = instagramShortcodeFromUrl(request.pageUrl);
 
-function storeComment(store: BackgroundStore, comment: SocialComment) {
-  const key = publicationKey(comment.provider, comment.publication_id);
-  const existing = store.commentsByPublication[key] || [];
-  const existingIndex = existing.findIndex((item) => item.comment_id === comment.comment_id);
-  if (existingIndex === -1) {
-    store.commentsByPublication[key] = [
-      ...existing,
-      { ...comment, captured_at: comment.captured_at || new Date().toISOString() },
-    ];
-    return;
+  for (const publication of publications) {
+    if (publication.shortcode && publication.shortcode === pageShortcode) {
+      publication.capture_priority = 0;
+    }
+    if (!handle || publication.author.username.toLowerCase() === handle) {
+      const prevMapping = publication.shortcode ? istore.publicationIdsByShortcode[publication.shortcode] : undefined;
+      storePublication(store, publication);
+      if (publication.shortcode) {
+        const prevId = prevMapping;
+        const newId = publication.publication_id;
+        if (prevId && prevId !== newId) {
+          migratePublicationRelations(store, prevId, newId);
+        }
+        istore.publicationIdsByShortcode[publication.shortcode] = newId;
+        store.instagramPublicationIdsByShortcode[publication.shortcode] = newId;
+      }
+      if (publication.author.username.toLowerCase() === handle) {
+        store.trackedProfiles.instagram = profileFromPublication(publication);
+      }
+    }
   }
 
-  store.commentsByPublication[key] = existing.map((item, index) =>
-    index === existingIndex
-      ? {
-          ...item,
-          ...comment,
-          captured_at: item.captured_at || comment.captured_at || new Date().toISOString(),
+  for (const comment of extractInstagramComments(request.payload, request.pageUrl)) {
+    const commentShortcode = comment.publication_id;
+    comment.publication_id = resolveInstagramPublicationId(store, comment.publication_id);
+    if (!instagramPublicationAllowedForComments(store, commentShortcode)) continue;
+    storeComment(store, comment);
+    storeEngagement(store, {
+      provider: "instagram",
+      publication_id: comment.publication_id,
+      kind: "comment",
+      engagement_id: publicationKey("instagram", `${comment.publication_id}:comment:${comment.comment_id}`),
+      actor: comment.author,
+      engaged_at: comment.created_at,
+    });
+  }
+
+  if (request.endpoint.includes("Liker") || request.endpoint.includes("LikedBy")) {
+    if (pageShortcode && !instagramPublicationAllowedForComments(store, pageShortcode)) return;
+    const relationPublicationId = resolveInstagramPublicationId(store, pageShortcode);
+    for (const engagement of extractInstagramLikers(request.payload, request.pageUrl)) {
+      engagement.publication_id = resolveInstagramPublicationId(store, engagement.publication_id);
+      engagement.engagement_id = publicationKey(
+        "instagram",
+        `${engagement.publication_id}:like:${engagement.actor.provider_user_id || engagement.actor.username}`,
+      );
+      storeEngagement(store, engagement);
+    }
+  }
+}
+
+function processLinkedInCapture(store: BackgroundStore, request: CapturedPayloadMessage) {
+  const lstore = store.platforms.linkedin;
+  const handle = trackedHandleForProvider(store, "linkedin");
+
+  if (request.endpoint === "feedDashOrganizationalPageUpdates") {
+    const publications = linkedinFeedToPublications(request.payload, handle);
+    for (const pub of publications) {
+      storePublication(store, pub);
+    }
+
+    const posts = linkedinFeedToPosts(request.payload, handle);
+    for (const post of posts) {
+      lstore.posts[post.id] = post;
+      if (!lstore.feedOrder.includes(post.id)) lstore.feedOrder.push(post.id);
+    }
+
+    const accountInfo = linkedinFeedAccountInfo(request.payload, handle);
+    if (accountInfo) {
+      lstore.accountInfo = accountInfo;
+      store.trackedProfiles.linkedin = accountInfo;
+    }
+  }
+
+  if (request.endpoint === "socialDashReactions" && request.url) {
+    const result = linkedinParseReactions(request.payload, request.url);
+    if (result) {
+      if (result.isCommentReaction) {
+        const threadUrn = result.parentUrn;
+        if (!lstore.commentReactions[threadUrn]) {
+          lstore.commentReactions[threadUrn] = { users: [] };
         }
-      : item,
+        const existing = new Set(lstore.commentReactions[threadUrn].users.map((u) => u.provider_user_id));
+        const fresh = result.users.filter((u) => !existing.has(u.provider_user_id));
+        lstore.commentReactions[threadUrn].users.push(...fresh);
+      } else {
+        const parentUrn = result.parentUrn;
+        if (!lstore.reactions[parentUrn]) {
+          const total = 0;
+          lstore.reactions[parentUrn] = { users: [], total, lastStart: 0 };
+        }
+        const entry = lstore.reactions[parentUrn];
+        if (entry) {
+          const existing = new Set(entry.users.map((u) => u.provider_user_id));
+          const fresh = result.users.filter((u) => !existing.has(u.provider_user_id));
+          entry.users.push(...fresh);
+        }
+
+        for (const user of result.users) {
+          const pub = findLinkedInPublicationByUrn(store, parentUrn);
+          const pid = pub?.publication_id || parentUrn;
+          storeEngagement(store, {
+            provider: "linkedin",
+            publication_id: pid,
+            kind: "like",
+            engagement_id: publicationKey("linkedin", `${pid}:like:${user.provider_user_id || user.username}`),
+            actor: user,
+          });
+        }
+      }
+    }
+  }
+
+  if (request.endpoint === "feedDashReshareFeed" && request.url) {
+    const result = linkedinParseReposts(request.payload, request.url);
+    if (result) {
+      const parentUrn = result.parentUrn;
+      if (!lstore.reposts[parentUrn]) {
+        lstore.reposts[parentUrn] = { users: [], total: 0, lastStart: 0 };
+      }
+      const entry = lstore.reposts[parentUrn];
+
+      const existingUrns = new Set(entry.users.map((u) => u.urn).filter(Boolean));
+      const existingActivityUrns = new Set(entry.users.map((u) => u.activity_urn).filter(Boolean));
+
+      for (const user of result.users) {
+        if (user.urn) {
+          if (existingUrns.has(user.urn)) continue;
+          existingUrns.add(user.urn);
+          entry.users.push(user);
+
+          const pub = findLinkedInPublicationByUrn(store, parentUrn);
+          const pid = pub?.publication_id || parentUrn;
+          storeEngagement(store, {
+            provider: "linkedin",
+            publication_id: pid,
+            kind: "like",
+            engagement_id: publicationKey("linkedin", `${pid}:repost:${user.urn}`),
+            actor: {
+              provider: "linkedin",
+              provider_user_id: user.urn,
+              username: (user.name || "").toLowerCase().replace(/\s+/g, "_"),
+              name: user.name || "",
+              avatar_url: user.avatar_url || "",
+            },
+          });
+        } else if (user.activity_urn) {
+          if (existingActivityUrns.has(user.activity_urn)) continue;
+          existingActivityUrns.add(user.activity_urn);
+
+          const existingPost = Object.values(lstore.posts).find(
+            (p) => p.activity_urn === user.activity_urn,
+          );
+          if (existingPost) {
+            entry.users.push({ reshare_ref: existingPost.id, activity_urn: user.activity_urn });
+          } else {
+            entry.users.push(user);
+          }
+        }
+      }
+    }
+  }
+
+  if (request.endpoint === "socialDashComments" && request.url) {
+    const result = linkedinParseComments(request.payload, request.url);
+    if (result) {
+      const parentUrn = result.parentUrn;
+      if (!lstore.comments[parentUrn]) {
+        lstore.comments[parentUrn] = { items: [], total: 0, lastStart: 0 };
+      }
+      const entry = lstore.comments[parentUrn];
+      if (entry) {
+        const existing = new Set(entry.items.map((c) => c.comment_id));
+        const fresh = result.comments.filter((c) => !existing.has(c.comment_id));
+        entry.items.push(...fresh);
+      }
+
+      for (const comment of result.comments) {
+        const pub = findLinkedInPublicationByUrn(store, parentUrn);
+        const pid = pub?.publication_id || parentUrn;
+        comment.publication_id = pid;
+        storeComment(store, comment);
+        storeEngagement(store, {
+          provider: "linkedin",
+          publication_id: pid,
+          kind: "comment",
+          engagement_id: publicationKey("linkedin", `${pid}:comment:${comment.comment_id}`),
+          actor: comment.author,
+          engaged_at: comment.created_at,
+        });
+      }
+    }
+  }
+}
+
+function findLinkedInPublicationByUrn(store: BackgroundStore, urn: string) {
+  return Object.values(store.publications).find(
+    (p) => p.provider === "linkedin" && (p.publication_id === urn || p.reposted_publication_id === urn),
   );
 }
 
-function storeEngagement(store: BackgroundStore, engagement: SocialEngagement) {
-  const key = publicationKey(engagement.provider, engagement.publication_id);
-  const existing = store.engagementsByPublication[key] || [];
-  if (!existing.some((item) => item.engagement_id === engagement.engagement_id)) {
-    store.engagementsByPublication[key] = [...existing, engagement];
+// ---------------------------------------------------------------------------
+// Visible Instagram helpers
+// ---------------------------------------------------------------------------
+
+function visibleInstagramItemsForHandle(
+  store: BackgroundStore,
+  items: InstagramStore["visiblePublications"],
+) {
+  const handle = trackedHandleForProvider(store, "instagram").toLowerCase();
+  if (!handle) return items;
+  return items.filter((item) => (item.author?.username || "").toLowerCase() === handle);
+}
+
+function processVisibleInstagramComments(
+  store: BackgroundStore,
+  request: VisibleCommentsMessage,
+  options: { recordRaw?: boolean } = { recordRaw: true },
+) {
+  const istore = store.platforms.instagram;
+  if (!request.publication_shortcode) return;
+
+  if (options.recordRaw !== false) {
+    recordRawPayload(store, "instagram", "InstagramDomComments", {
+      page_url: request.pageUrl,
+      publication_shortcode: request.publication_shortcode,
+      captured_at: request.captured_at,
+      comments: request.comments,
+    }, request.captured_at);
   }
+
+  const publicationId = resolveInstagramPublicationId(store, request.publication_shortcode);
+  const shouldStoreNormalized = instagramPublicationAllowedForComments(store, request.publication_shortcode);
+  const seen = new Set(istore.visibleComments.map((c) => `${c.publication_shortcode}:${c.comment_id}`));
+
+  for (const vc of request.comments) {
+    const visibleKey = `${vc.publication_shortcode}:${vc.comment_id}`;
+    if (!seen.has(visibleKey)) {
+      seen.add(visibleKey);
+      const entry = {
+        author: {
+          provider: "instagram" as const,
+          provider_user_id: vc.author.provider_user_id || "",
+          username: vc.author.username,
+          name: vc.author.name || vc.author.username,
+          avatar_url: vc.author.avatar_url || "",
+        },
+        captured_at: request.captured_at,
+        comment_id: vc.comment_id,
+        like_count: vc.like_count || 0,
+        parent_comment_id: vc.parent_comment_id || null,
+        publication_shortcode: vc.publication_shortcode,
+        relative_created_at: vc.relative_created_at,
+        source: vc.source || "Instagram DOM",
+        text: vc.text,
+      };
+      istore.visibleComments.push(entry);
+      store.instagramVisibleComments.push(entry);
+    }
+
+    if (!shouldStoreNormalized) continue;
+    const comment: SocialComment = {
+      provider: "instagram",
+      publication_id: publicationId,
+      captured_at: request.captured_at,
+      comment_id: vc.comment_id,
+      author: {
+        provider: "instagram",
+        provider_user_id: vc.author.provider_user_id || "",
+        username: vc.author.username,
+        name: vc.author.name || vc.author.username,
+        avatar_url: vc.author.avatar_url || "",
+      },
+      text: vc.text,
+      created_at: "",
+      relative_created_at: vc.relative_created_at,
+      like_count: vc.like_count || 0,
+      parent_comment_id: vc.parent_comment_id || null,
+      source: vc.source || "Instagram DOM",
+    };
+    storeComment(store, comment);
+    storeEngagement(store, {
+      provider: "instagram",
+      publication_id: comment.publication_id,
+      kind: "comment",
+      engagement_id: publicationKey("instagram", `${comment.publication_id}:comment:${comment.comment_id}`),
+      actor: comment.author,
+      captured_at: request.captured_at,
+      engaged_at: null,
+    });
+  }
+  store.lastUpdated = request.captured_at;
 }
 
 function recordRawPayload(
@@ -276,170 +792,9 @@ function recordRawPayload(
   store.lastUpdated = timestamp;
 }
 
-function resolveInstagramPublicationId(store: BackgroundStore, publicationId: string) {
-  if (store.instagramPublicationIdsByShortcode[publicationId]) {
-    return store.instagramPublicationIdsByShortcode[publicationId];
-  }
-  if (publicationId && !/^\d+$/.test(publicationId)) {
-    const placeholderId = `shortcode:${publicationId}`;
-    store.instagramPublicationIdsByShortcode[publicationId] = placeholderId;
-    return placeholderId;
-  }
-  return publicationId;
-}
-
-function trackedHandleForProvider(store: BackgroundStore, provider: SocialProvider) {
-  return (store.trackedHandles[provider] ?? store.trackedHandle).trim();
-}
-
-function visibleInstagramItemsForHandle(
-  store: BackgroundStore,
-  items: BackgroundStore["instagramVisiblePublications"],
-) {
-  const handle = trackedHandleForProvider(store, "instagram").toLowerCase();
-  if (!handle) return items;
-  return items.filter((item) => (item.author?.username || "").toLowerCase() === handle);
-}
-
-function instagramPublicationAllowedForComments(store: BackgroundStore, shortcode: string) {
-  const handle = trackedHandleForProvider(store, "instagram").toLowerCase();
-  if (!handle) return true;
-  const publicationId = store.instagramPublicationIdsByShortcode[shortcode];
-  const publication =
-    store.publications[publicationKey("instagram", shortcode)] ||
-    (publicationId && store.publications[publicationKey("instagram", publicationId)]);
-  if (publication) return publication.author.username.toLowerCase() === handle;
-  return store.instagramVisiblePublications.some(
-    (item) =>
-      item.shortcode === shortcode && (item.author?.username || "").toLowerCase() === handle,
-  );
-}
-
-function processXCapture(store: BackgroundStore, request: CapturedPayloadMessage) {
-  const trackedHandle = trackedHandleForProvider(store, "x");
-  const handle = trackedHandle.toLowerCase();
-
-  if (request.endpoint === "UserTweets") {
-    processUserTweetsPayload(request.payload, trackedHandle, (tweet, publication, rawResult) => {
-      const authorHandle = tweet.author.screen_name.toLowerCase();
-
-      if (authorHandle === handle) {
-        if (!store.accountInfo && tweet.author.rest_id) {
-          const authorResult = rawResult.core?.user_results?.result;
-          store.accountInfo = accountInfoFromUser(authorResult || {}, tweet);
-          store.trackedProfiles.x = accountInfoToTrackedProfile(store.accountInfo);
-        }
-        store.tweets[tweet.tweet_id] = tweet;
-        storePublication(store, publication);
-      }
-
-      if (tweet.in_reply_to_screen_name?.toLowerCase() === handle && authorHandle !== handle) {
-        store.communityReplies[tweet.tweet_id] = publication;
-        storePublication(store, publication);
-        storeEngagement(store, {
-          provider: "x",
-          publication_id: tweet.in_reply_to_tweet_id || tweet.tweet_id,
-          kind: "comment",
-          engagement_id: publicationKey(
-            "x",
-            `${tweet.in_reply_to_tweet_id || tweet.tweet_id}:reply:${tweet.tweet_id}`,
-          ),
-          actor: publication.author,
-          engaged_at: tweet.created_at,
-        });
-      }
-    });
-  }
-
-  if (request.endpoint === "Favoriters") {
-    const users = processFavoritersPayload(request.payload);
-    const tweetIdMatch = (request.pageUrl || "").match(/status\/(\d+)/);
-    if (tweetIdMatch && users.length) {
-      const tweetId = tweetIdMatch[1] || "";
-      if (!store.favoriters[tweetId]) store.favoriters[tweetId] = [];
-      const existing = new Set(store.favoriters[tweetId].map((u) => u.rest_id));
-      const freshUsers = users.filter((u) => !existing.has(u.rest_id));
-      store.favoriters[tweetId].push(...freshUsers);
-      for (const user of freshUsers) {
-        storeEngagement(store, favoriterToEngagement(tweetId, user));
-      }
-    }
-  }
-
-  if (request.endpoint === "UserByScreenName") {
-    const user = (request.payload as AnyRecord)?.data?.user?.result;
-    if (
-      user &&
-      trackedHandleForProvider(store, "x") &&
-      user.core?.screen_name?.toLowerCase() === trackedHandleForProvider(store, "x").toLowerCase()
-    ) {
-      store.accountInfo = accountInfoFromUser(user);
-      store.trackedProfiles.x = accountInfoToTrackedProfile(store.accountInfo);
-    }
-  }
-}
-
-function processInstagramCapture(store: BackgroundStore, request: CapturedPayloadMessage) {
-  const handle = trackedHandleForProvider(store, "instagram").toLowerCase();
-  const publications = extractInstagramPublications(request.payload);
-  const pageShortcode = instagramShortcodeFromUrl(request.pageUrl);
-
-  for (const publication of publications) {
-    if (publication.shortcode && publication.shortcode === pageShortcode) {
-      publication.capture_priority = 0;
-    }
-    if (!handle || publication.author.username.toLowerCase() === handle) {
-      storePublication(store, publication);
-      if (publication.author.username.toLowerCase() === handle) {
-        store.trackedProfiles.instagram = profileFromPublication(publication);
-      }
-    }
-  }
-
-  for (const comment of extractInstagramComments(request.payload, request.pageUrl)) {
-    comment.publication_id = resolveInstagramPublicationId(store, comment.publication_id);
-    if (!instagramPublicationAllowedForComments(store, comment.publication_id)) continue;
-    storeComment(store, comment);
-    storeEngagement(store, {
-      provider: "instagram",
-      publication_id: comment.publication_id,
-      kind: "comment",
-      engagement_id: publicationKey(
-        "instagram",
-        `${comment.publication_id}:comment:${comment.comment_id}`,
-      ),
-      actor: comment.author,
-      engaged_at: comment.created_at,
-    });
-  }
-
-  if (request.endpoint.includes("Liker") || request.endpoint.includes("LikedBy")) {
-    const relationPublicationId = resolveInstagramPublicationId(store, pageShortcode);
-    if (
-      relationPublicationId &&
-      !instagramPublicationAllowedForComments(store, relationPublicationId)
-    ) {
-      return;
-    }
-
-    for (const engagement of extractInstagramLikers(request.payload, request.pageUrl)) {
-      engagement.publication_id = resolveInstagramPublicationId(store, engagement.publication_id);
-      engagement.engagement_id = publicationKey(
-        "instagram",
-        `${engagement.publication_id}:like:${engagement.actor.provider_user_id || engagement.actor.username}`,
-      );
-      storeEngagement(store, engagement);
-    }
-  }
-}
-
-function clearCapturedData(store: BackgroundStore) {
-  const trackedHandle = store.trackedHandle;
-  const trackedHandles = { ...store.trackedHandles };
-  Object.assign(store, createStore(trackedHandle));
-  store.trackedHandles = trackedHandles;
-  store.lastUpdated = new Date().toISOString();
-}
+// ---------------------------------------------------------------------------
+// Clear / reprocess
+// ---------------------------------------------------------------------------
 
 function clearDisplayedData(store: BackgroundStore) {
   const trackedHandle = store.trackedHandle;
@@ -472,157 +827,25 @@ function clearNormalizedData(store: BackgroundStore) {
   store.nextCaptureOrder = 1;
 }
 
-function hasCapturedData(store: BackgroundStore) {
-  return (
-    Object.keys(store.endpoints).length > 0 ||
-    Object.keys(store.publications).length > 0 ||
-    Object.keys(store.commentsByPublication).length > 0 ||
-    Object.keys(store.engagementsByPublication).length > 0 ||
-    store.instagramVisiblePublications.length > 0 ||
-    store.instagramVisibleComments.length > 0 ||
-    Object.keys(store.tweets).length > 0 ||
-    Object.keys(store.communityReplies).length > 0 ||
-    Object.keys(store.favoriters).length > 0
-  );
-}
-
-function hasCapturedDataOutsideProvider(store: BackgroundStore, provider: SocialProvider) {
-  return (
-    Object.values(store.endpoints).some((endpoint) => endpoint.provider !== provider) ||
-    Object.values(store.publications).some((publication) => publication.provider !== provider) ||
-    Object.values(store.commentsByPublication)
-      .flat()
-      .some((comment) => comment.provider !== provider) ||
-    Object.values(store.engagementsByPublication)
-      .flat()
-      .some((engagement) => engagement.provider !== provider)
-  );
-}
-
-function activateContext(
-  store: BackgroundStore,
-  provider: null | SocialProvider,
-  pageUrl?: string,
-) {
-  const switchingProvider = Boolean(
-    provider && store.activeProvider && store.activeProvider !== provider,
-  );
-  const staleHydratedContext = Boolean(
-    provider && !store.activeProvider && hasCapturedDataOutsideProvider(store, provider),
-  );
-
-  if ((switchingProvider || staleHydratedContext) && hasCapturedData(store)) {
-    clearCapturedData(store);
-  }
-
+function activateContext(store: BackgroundStore, provider: null | SocialProvider, pageUrl?: string) {
   store.activeProvider = provider;
-  if (provider && pageUrl) {
-    store.providerPageUrls[provider] = pageUrl;
-  }
+  if (provider && pageUrl) store.providerPageUrls[provider] = pageUrl;
   store.lastUpdated = new Date().toISOString();
 }
 
-function processVisibleInstagramComments(
-  store: BackgroundStore,
-  request: VisibleCommentsMessage,
-  options: { recordRaw?: boolean } = { recordRaw: true },
-) {
-  if (!request.publication_shortcode) {
-    return;
-  }
-
-  if (options.recordRaw !== false) {
-    recordRawPayload(
-      store,
-      "instagram",
-      "InstagramDomComments",
-      {
-        page_url: request.pageUrl,
-        publication_shortcode: request.publication_shortcode,
-        captured_at: request.captured_at,
-        comments: request.comments,
-      },
-      request.captured_at,
-    );
-  }
-
-  const publicationId = resolveInstagramPublicationId(store, request.publication_shortcode);
-  const shouldStoreNormalized = instagramPublicationAllowedForComments(
-    store,
-    request.publication_shortcode,
-  );
-  const seen = new Set(
-    store.instagramVisibleComments.map(
-      (comment) => `${comment.publication_shortcode}:${comment.comment_id}`,
-    ),
-  );
-
-  for (const visibleComment of request.comments) {
-    const visibleKey = `${visibleComment.publication_shortcode}:${visibleComment.comment_id}`;
-    if (!seen.has(visibleKey)) {
-      seen.add(visibleKey);
-      store.instagramVisibleComments.push({
-        author: {
-          provider: "instagram",
-          provider_user_id: visibleComment.author.provider_user_id || "",
-          username: visibleComment.author.username,
-          name: visibleComment.author.name || visibleComment.author.username,
-          avatar_url: visibleComment.author.avatar_url || "",
-        },
-        captured_at: request.captured_at,
-        comment_id: visibleComment.comment_id,
-        like_count: visibleComment.like_count || 0,
-        parent_comment_id: visibleComment.parent_comment_id || null,
-        publication_shortcode: visibleComment.publication_shortcode,
-        relative_created_at: visibleComment.relative_created_at,
-        source: visibleComment.source || "Instagram DOM",
-        text: visibleComment.text,
-      });
-    }
-
-    if (!shouldStoreNormalized) continue;
-
-    const comment: SocialComment = {
-      provider: "instagram",
-      publication_id: publicationId,
-      captured_at: request.captured_at,
-      comment_id: visibleComment.comment_id,
-      author: {
-        provider: "instagram",
-        provider_user_id: visibleComment.author.provider_user_id || "",
-        username: visibleComment.author.username,
-        name: visibleComment.author.name || visibleComment.author.username,
-        avatar_url: visibleComment.author.avatar_url || "",
-      },
-      text: visibleComment.text,
-      created_at: "",
-      relative_created_at: visibleComment.relative_created_at,
-      like_count: visibleComment.like_count || 0,
-      parent_comment_id: visibleComment.parent_comment_id || null,
-      source: visibleComment.source || "Instagram DOM",
-    };
-
-    storeComment(store, comment);
-    storeEngagement(store, {
-      provider: "instagram",
-      publication_id: comment.publication_id,
-      kind: "comment",
-      engagement_id: publicationKey(
-        "instagram",
-        `${comment.publication_id}:comment:${comment.comment_id}`,
-      ),
-      actor: comment.author,
-      captured_at: request.captured_at,
-      engaged_at: null,
-    });
-  }
-
-  store.lastUpdated = request.captured_at;
-}
-
-function instagramShortcodeFromUrl(pageUrl?: string) {
-  if (!pageUrl) return "";
-  return pageUrl.match(/\/(?:p|reel|reels)\/([^/?#]+)/)?.[1] || "";
+function sortPublications(publications: SocialPublication[]) {
+  return publications.sort((a, b) => {
+    const orderA = a.capture_order || Number.MAX_SAFE_INTEGER;
+    const orderB = b.capture_order || Number.MAX_SAFE_INTEGER;
+    const visibleA = a.visible_order ?? Number.MAX_SAFE_INTEGER;
+    const visibleB = b.visible_order ?? Number.MAX_SAFE_INTEGER;
+    if (visibleA !== visibleB) return visibleA - visibleB;
+    const priorityA = a.capture_priority ?? 100;
+    const priorityB = b.capture_priority ?? 100;
+    if (priorityA !== priorityB) return priorityA - priorityB;
+    if (orderA !== orderB) return orderA - orderB;
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  });
 }
 
 function reprocessPayloads(store: BackgroundStore) {
@@ -650,171 +873,379 @@ function reprocessPayloads(store: BackgroundStore) {
   store.pageSessionKeys = pageSessionKeys;
   store.providerPageUrls = providerPageUrls;
   store.trackedHandles = trackedHandles;
-  store.archivedEndpoints = archivedEndpoints;
 
   visibleInstagramItemsForHandle(store, visiblePublications).forEach((item, index) => {
     storePublication(store, instagramPlaceholderPublication(item, index + 1));
   });
 
-  for (const payload of payloads) {
-    if (payload.provider === "x") processXCapture(store, payload);
-    if (payload.provider === "instagram") processInstagramCapture(store, payload);
+  for (const p of payloads) {
+    if (p.provider === "x") processXCapture(store, p);
+    if (p.provider === "instagram") processInstagramCapture(store, p);
+    if (p.provider === "linkedin") processLinkedInCapture(store, p);
   }
 
   const commentsByBatch = new Map<string, VisibleCommentsMessage["comments"]>();
-  for (const comment of visibleComments) {
-    const key = comment.publication_shortcode;
-    const comments = commentsByBatch.get(key) || [];
-    comments.push({
-      author: {
-        provider_user_id: comment.author.provider_user_id,
-        username: comment.author.username,
-        name: comment.author.name,
-        avatar_url: comment.author.avatar_url,
-      },
-      comment_id: comment.comment_id,
-      like_count: comment.like_count,
-      parent_comment_id: comment.parent_comment_id,
-      publication_shortcode: comment.publication_shortcode,
-      relative_created_at: comment.relative_created_at,
-      source: comment.source,
-      text: comment.text,
+  for (const c of visibleComments) {
+    const key = c.publication_shortcode;
+    const batch = commentsByBatch.get(key) || [];
+    batch.push({
+      author: { provider_user_id: c.author.provider_user_id, username: c.author.username, name: c.author.name, avatar_url: c.author.avatar_url },
+      comment_id: c.comment_id, like_count: c.like_count,
+      parent_comment_id: c.parent_comment_id, publication_shortcode: c.publication_shortcode,
+      relative_created_at: c.relative_created_at, source: c.source, text: c.text,
     });
-    commentsByBatch.set(key, comments);
+    commentsByBatch.set(key, batch);
   }
   for (const [shortcode, comments] of commentsByBatch) {
-    processVisibleInstagramComments(
-      store,
-      {
-        action: "VISIBLE_COMMENTS",
-        provider: "instagram",
-        pageUrl: `https://www.instagram.com/p/${shortcode}/`,
-        publication_shortcode: shortcode,
-        captured_at: new Date().toISOString(),
-        comments,
-      },
-      { recordRaw: false },
-    );
+    processVisibleInstagramComments(store, {
+      action: "VISIBLE_COMMENTS", provider: "instagram",
+      pageUrl: `https://www.instagram.com/p/${shortcode}/`,
+      publication_shortcode: shortcode, captured_at: new Date().toISOString(), comments,
+    }, { recordRaw: false });
   }
 }
 
-function buildExportJSON(store: BackgroundStore): ExportJSON {
-  const publications = sortPublications(Object.values(store.publications));
-  const tweets = Object.values(store.tweets).sort(
-    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
-  );
-  const replies = Object.values(store.communityReplies).sort(
-    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
-  );
+// ---------------------------------------------------------------------------
+// Export v3
+// ---------------------------------------------------------------------------
 
-  const allComments = Object.values(store.commentsByPublication).flat();
-  const allEngagements = Object.values(store.engagementsByPublication).flat();
-  const totalLikes = publications.reduce(
-    (sum, publication) => sum + publication.metrics.like_count,
-    0,
-  );
-  const totalViews = publications.reduce(
-    (sum, publication) => sum + publication.metrics.view_count,
-    0,
-  );
-  const uniqueEngagers = new Set(
-    allEngagements.map(
-      (engagement) => engagement.actor.provider_user_id || engagement.actor.username,
-    ),
-  );
-
-  const providerSummary = { instagram: emptyProviderSummary(), x: emptyProviderSummary() };
-  for (const provider of ["instagram", "x"] as const) {
-    const providerPublications = publications.filter(
-      (publication) => publication.provider === provider,
-    );
-    const providerComments = allComments.filter((comment) => comment.provider === provider);
-    const providerEngagements = allEngagements.filter(
-      (engagement) => engagement.provider === provider,
-    );
-    providerSummary[provider] = {
-      total_publications: providerPublications.length,
-      total_comments: providerComments.length,
-      total_engagements: providerEngagements.length,
-      total_likes: providerPublications.reduce(
-        (sum, publication) => sum + publication.metrics.like_count,
-        0,
-      ),
-      total_views: providerPublications.reduce(
-        (sum, publication) => sum + publication.metrics.view_count,
-        0,
-      ),
-      unique_engagers: new Set(
-        providerEngagements.map(
-          (engagement) => engagement.actor.provider_user_id || engagement.actor.username,
-        ),
-      ).size,
-    };
-  }
-
-  const originalTweets = tweets.filter((t) => t.type === "original");
-  const xTotalLikes = originalTweets.reduce((s, t) => s + t.metrics.favorite_count, 0);
-  const xTotalViews = originalTweets.reduce((s, t) => s + t.metrics.view_count, 0);
-  const xTotalReplies = originalTweets.reduce((s, t) => s + t.metrics.reply_count, 0);
-
-  const topByLikes = [...publications].sort(
-    (a, b) => b.metrics.like_count - a.metrics.like_count,
-  )[0];
-  const topByViews = [...publications].sort(
-    (a, b) => b.metrics.view_count - a.metrics.view_count,
-  )[0];
-
+function buildPlatformDataX(store: BackgroundStore): ExportV3PlatformX {
+  const xstore = store.platforms.x;
   return {
-    schema_version: 2,
-    tracked_profiles: {
-      instagram: store.trackedProfiles.instagram || { username: store.trackedHandle },
-      x: store.trackedProfiles.x || { username: store.trackedHandle },
-    },
-    tracked_account: store.accountInfo || { screen_name: store.trackedHandle },
-    exported_at: new Date().toISOString(),
-    publications,
-    comments_by_publication: store.commentsByPublication,
-    engagements_by_publication: store.engagementsByPublication,
-    raw_payloads: store.endpoints,
-    tweets,
-    community_replies: replies,
-    favoriters_by_tweet: store.favoriters,
-    summary: {
-      total_publications: publications.length,
-      total_comments: allComments.length,
-      total_engagements: allEngagements.length,
-      total_likes: totalLikes,
-      total_views: totalViews,
-      unique_engagers: uniqueEngagers.size,
-      providers: providerSummary,
-      top_publication_by_likes: topByLikes
-        ? publicationKey(topByLikes.provider, topByLikes.publication_id)
-        : null,
-      top_publication_by_views: topByViews
-        ? publicationKey(topByViews.provider, topByViews.publication_id)
-        : null,
-      total_tweets: tweets.length,
-      total_original: originalTweets.length,
-      total_retweets: tweets.filter((t) => t.type === "retweet").length,
-      total_quotes: tweets.filter((t) => t.type === "quote").length,
-      total_replies_from_account: tweets.filter((t) => t.type === "reply").length,
-      total_community_replies: replies.length,
-      total_reply_engagement: xTotalReplies,
-      avg_likes_per_original: originalTweets.length
-        ? Math.round(xTotalLikes / originalTweets.length)
-        : 0,
-      avg_views_per_original: originalTweets.length
-        ? Math.round(xTotalViews / originalTweets.length)
-        : 0,
-      top_tweet_by_likes:
-        [...originalTweets].sort((a, b) => b.metrics.favorite_count - a.metrics.favorite_count)[0]
-          ?.tweet_id || null,
-      top_tweet_by_views:
-        [...originalTweets].sort((a, b) => b.metrics.view_count - a.metrics.view_count)[0]
-          ?.tweet_id || null,
+    content: Object.values(xstore.tweets).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
+    engagers: {
+      likes_by_tweet: xstore.favoriters,
+      replies: Object.values(xstore.communityReplies),
     },
   };
 }
+
+function buildCommentTree(comments: SocialComment[]): ExportComment[] {
+  const byId = new Map<string, ExportComment>();
+  const roots: ExportComment[] = [];
+
+  for (const c of comments) {
+    const node: ExportComment = {
+      comment_id: c.comment_id,
+      author: c.author,
+      text: c.text,
+      created_at: c.created_at,
+      like_count: c.like_count || undefined,
+      replies: [],
+    };
+    byId.set(c.comment_id, node);
+  }
+
+  for (const c of comments) {
+    const node = byId.get(c.comment_id)!;
+    if (c.parent_comment_id && byId.has(c.parent_comment_id)) {
+      byId.get(c.parent_comment_id)!.replies.push(node);
+    } else {
+      roots.push(node);
+    }
+  }
+
+  return roots;
+}
+
+function buildPlatformDataInstagram(store: BackgroundStore): ExportV3PlatformInstagram {
+  const istore = store.platforms.instagram;
+  const sortedPubs = sortPublications(Object.values(istore.publications));
+
+  const likesByPublication = new Map<string, SocialActor[]>();
+  for (const [key, engagements] of Object.entries(istore.engagementsByPublication)) {
+    for (const e of engagements) {
+      if (e.kind !== "like") continue;
+      const list = likesByPublication.get(key) || [];
+      list.push(e.actor);
+      likesByPublication.set(key, list);
+    }
+  }
+
+  const content: ExportInstagramPost[] = sortedPubs.map((pub) => {
+    const pubKey = publicationKey("instagram", pub.publication_id);
+    const flatComments = istore.commentsByPublication[pubKey] || [];
+    return {
+      ...pub,
+      engagers: {
+        likes: likesByPublication.get(pubKey) || [],
+        comments: buildCommentTree(flatComments),
+      },
+    };
+  });
+
+  return { content };
+}
+
+function buildLinkedInCommentWithReactions(
+  items: SocialComment[],
+  commentReactions: Record<string, { users: SocialActor[] }>,
+): ExportComment[] {
+  const byId = new Map<string, ExportComment>();
+  const roots: ExportComment[] = [];
+
+  for (const c of items) {
+    const node: ExportComment = {
+      comment_id: c.comment_id,
+      author: c.author,
+      text: c.text,
+      created_at: c.created_at,
+      replies: [],
+    };
+    byId.set(c.comment_id, node);
+  }
+
+  for (const c of items) {
+    const node = byId.get(c.comment_id)!;
+    if (c.parent_comment_id && byId.has(c.parent_comment_id)) {
+      byId.get(c.parent_comment_id)!.replies.push(node);
+    } else {
+      roots.push(node);
+    }
+  }
+
+  for (const [, node] of byId) {
+    const reactions = commentReactions[node.comment_id];
+    if (reactions?.users?.length) {
+      node.reaction_users = reactions.users;
+    }
+  }
+
+  return roots;
+}
+
+function computeLinkedInEngagementMetrics(
+  reactions: LinkedInEngagerStore | undefined,
+  reposts: LinkedInRepostStore | undefined,
+  comments: ExportComment[],
+  trackedAccountUrn: string,
+): LinkedInEngagementMetrics {
+  let realComments = 0;
+  let replies = 0;
+  const commenterUrns = new Set<string>();
+  const reacterUrns = new Set<string>();
+  const allUrns = new Set<string>();
+
+  const walk = (items: ExportComment[], depth: number) => {
+    for (const c of items) {
+      if (depth === 0) realComments++;
+      else replies++;
+      if (c.author.provider_user_id) { commenterUrns.add(c.author.provider_user_id); allUrns.add(c.author.provider_user_id); }
+      for (const r of (c.reaction_users || [])) {
+        if (r.provider_user_id) { reacterUrns.add(r.provider_user_id); allUrns.add(r.provider_user_id); }
+      }
+      walk(c.replies || [], depth + 1);
+    }
+  };
+  walk(comments, 0);
+
+  for (const u of (reactions?.users || [])) {
+    if (u.provider_user_id) { reacterUrns.add(u.provider_user_id); allUrns.add(u.provider_user_id); }
+  }
+  for (const u of (reposts?.users || [])) {
+    if (u.urn) allUrns.add(u.urn);
+  }
+
+  let audienceInteractions = 0;
+  for (const urn of allUrns) {
+    if (urn !== trackedAccountUrn) audienceInteractions++;
+  }
+
+  return {
+    real_comments: realComments,
+    replies,
+    unique_commenters_count: commenterUrns.size,
+    unique_reacters_count: reacterUrns.size,
+    unique_engagers_count: allUrns.size,
+    audience_interactions: audienceInteractions,
+  };
+}
+
+function buildPlatformDataLinkedin(store: BackgroundStore): ExportV3PlatformLinkedin {
+  const lstore = store.platforms.linkedin;
+  const trackedAccountUrn = lstore.accountInfo?.provider_user_id || "";
+
+  const content: ExportLinkedInPost[] = (lstore.feedOrder || []).reduce<ExportLinkedInPost[]>((acc, id) => {
+    const post = lstore.posts[id];
+    if (!post) return acc;
+    const shareUrn = post.share_urn;
+    const activityUrn = post.activity_urn;
+    const reactions = lstore.reactions[shareUrn] || lstore.reactions[activityUrn];
+    const reposts = lstore.reposts[shareUrn];
+    const commentsStore = lstore.comments[shareUrn] || lstore.comments[activityUrn];
+
+    const reactionUsers: LinkedInReactionUser[] = (reactions?.users || []).map((u) => ({
+      urn: u.provider_user_id,
+      name: u.name,
+      headline: "",
+      avatar_url: u.avatar_url,
+      navigation_url: "",
+      reaction_type: (u as any).reaction_type || "",
+    }));
+
+    const repostEntries: LinkedInRepostEntry[] = (reposts?.users || []).map((u) => ({
+      urn: u.urn,
+      name: u.name,
+      avatar_url: u.avatar_url,
+      ...(u.activity_urn ? {
+        id: u.id,
+        activity_urn: u.activity_urn,
+        share_urn: u.share_urn,
+        text: u.text,
+        type: u.type,
+        author: u.author,
+        metrics: u.metrics,
+        hashtags: u.hashtags,
+        media: u.media,
+        post_not_found: u.post_not_found,
+        reshare_ref: u.reshare_ref,
+      } : {}),
+    }));
+
+    const commentItems = commentsStore?.items || [];
+    const exportComments = buildLinkedInCommentWithReactions(commentItems, lstore.commentReactions);
+
+    const engagementMetrics = computeLinkedInEngagementMetrics(
+      reactions,
+      reposts,
+      exportComments,
+      trackedAccountUrn,
+    );
+
+    const { engagers: _oldEngagers, ...postData } = post;
+    acc.push({
+      ...postData,
+      engagers: {
+        reactions: reactionUsers,
+        reposts: repostEntries,
+        comments: exportComments,
+      },
+      engagement_metrics: engagementMetrics,
+    });
+    return acc;
+  }, []);
+
+  return { content };
+}
+
+function computeSummaryX(store: BackgroundStore): ExportSummaryX {
+  const xstore = store.platforms.x;
+  const pubs = Object.values(xstore.publications);
+  const tweets = Object.values(xstore.tweets);
+  return {
+    total_content: pubs.length,
+    total_likes: pubs.reduce((s, p) => s + p.metrics.like_count, 0),
+    total_retweets: tweets.reduce((s, t) => s + t.metrics.retweet_count, 0),
+    total_replies: Object.values(xstore.commentsByPublication).flat().length,
+    total_quotes: tweets.reduce((s, t) => s + t.metrics.quote_count, 0),
+    total_bookmarks: tweets.reduce((s, t) => s + t.metrics.bookmark_count, 0),
+    total_views: pubs.reduce((s, p) => s + p.metrics.view_count, 0),
+  };
+}
+
+function computeSummaryInstagram(store: BackgroundStore): ExportSummaryInstagram {
+  const istore = store.platforms.instagram;
+  const pubs = Object.values(istore.publications);
+  return {
+    total_content: pubs.length,
+    total_likes: pubs.reduce((s, p) => s + p.metrics.like_count, 0),
+    total_comments: Object.values(istore.commentsByPublication).flat().length,
+    total_views: pubs.reduce((s, p) => s + p.metrics.view_count, 0),
+  };
+}
+
+function computeSummaryLinkedin(store: BackgroundStore): ExportSummaryLinkedin {
+  const lstore = store.platforms.linkedin;
+  const posts = Object.values(lstore.posts);
+  const totalReactionUsers = Object.values(lstore.reactions).reduce((s, r) => s + r.users.length, 0);
+  const totalRepostUsers = Object.values(lstore.reposts).reduce((s, r) => s + r.users.length, 0);
+  const totalCommentItems = Object.values(lstore.comments).reduce((s, c) => s + c.items.length, 0);
+  const totalCommentReactionUsers = Object.values(lstore.commentReactions).reduce((s, r) => s + r.users.length, 0);
+
+  const allEngagers = new Set<string>();
+  for (const entry of Object.values(lstore.reactions))
+    for (const u of entry.users) allEngagers.add(u.provider_user_id || u.username);
+  for (const entry of Object.values(lstore.reposts))
+    for (const u of entry.users) allEngagers.add(u.urn || u.activity_urn || "");
+  for (const entry of Object.values(lstore.comments))
+    for (const c of entry.items) allEngagers.add(c.author.provider_user_id || c.author.username);
+
+  return {
+    total_content: posts.length,
+    total_likes: posts.reduce((s, p) => s + p.metrics.like_count, 0),
+    total_comments: posts.reduce((s, p) => s + p.metrics.comment_count, 0),
+    total_shares: posts.reduce((s, p) => s + p.metrics.share_count, 0),
+    total_reaction_users: totalReactionUsers,
+    total_repost_users: totalRepostUsers,
+    total_comment_items: totalCommentItems,
+    total_comment_reaction_users: totalCommentReactionUsers,
+    total_audience_interactions: allEngagers.size,
+  };
+}
+
+function buildExportJSON(store: BackgroundStore): ExportJSON {
+  const xEngs = Object.values(store.platforms.x.engagementsByPublication).flat();
+  const igEngs = Object.values(store.platforms.instagram.engagementsByPublication).flat();
+  const liEngagers = new Set<string>();
+  for (const entry of Object.values(store.platforms.linkedin.reactions))
+    for (const u of entry.users) liEngagers.add(u.provider_user_id || u.username);
+  for (const entry of Object.values(store.platforms.linkedin.reposts))
+    for (const u of entry.users) liEngagers.add(u.urn || u.activity_urn || "");
+  for (const entry of Object.values(store.platforms.linkedin.comments))
+    for (const c of entry.items) liEngagers.add(c.author.provider_user_id || c.author.username);
+
+  const allEngagers = new Set([
+    ...xEngs.map((e) => e.actor.provider_user_id || e.actor.username),
+    ...igEngs.map((e) => e.actor.provider_user_id || e.actor.username),
+    ...liEngagers,
+  ]);
+
+  return {
+    schema_version: 3,
+    meta: {
+      exported_at: new Date().toISOString(),
+      handles: { ...store.trackedHandles, _: store.trackedHandle } as ExportV3Meta["handles"],
+      profiles: {
+        instagram: store.trackedProfiles.instagram || { username: store.trackedHandle },
+        linkedin: store.trackedProfiles.linkedin || { username: store.trackedHandle },
+        x: store.trackedProfiles.x || { username: store.trackedHandle },
+      },
+    },
+    per_platform: {
+      x: buildPlatformDataX(store),
+      instagram: buildPlatformDataInstagram(store),
+      linkedin: buildPlatformDataLinkedin(store),
+    },
+    unified: {
+      summary: {
+        all: {
+          total_content:
+            Object.values(store.platforms.x.publications).length +
+            Object.values(store.platforms.instagram.publications).length +
+            Object.values(store.platforms.linkedin.posts).length,
+          total_likes:
+            Object.values(store.platforms.x.publications).reduce((s, p) => s + p.metrics.like_count, 0) +
+            Object.values(store.platforms.instagram.publications).reduce((s, p) => s + p.metrics.like_count, 0) +
+            Object.values(store.platforms.linkedin.posts).reduce((s, p) => s + p.metrics.like_count, 0),
+          total_comments:
+            Object.values(store.platforms.x.commentsByPublication).flat().length +
+            Object.values(store.platforms.instagram.commentsByPublication).flat().length +
+            Object.values(store.platforms.linkedin.posts).reduce((s, p) => s + p.metrics.comment_count, 0),
+          unique_engagers: allEngagers.size,
+        },
+        by_platform: {
+          x: computeSummaryX(store),
+          instagram: computeSummaryInstagram(store),
+          linkedin: computeSummaryLinkedin(store),
+        },
+      },
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// storeForProvider (legacy compat)
+// ---------------------------------------------------------------------------
 
 function storeForProvider(store: BackgroundStore, provider: null | SocialProvider) {
   if (!provider) return store;
@@ -826,89 +1257,64 @@ function storeForProvider(store: BackgroundStore, provider: null | SocialProvide
   scoped.pageSessionKeys = store.pageSessionKeys;
   scoped.providerPageUrls = store.providerPageUrls;
   scoped.publications = Object.fromEntries(
-    Object.entries(store.publications).filter(
-      ([, publication]) => publication.provider === provider,
-    ),
+    Object.entries(store.publications).filter(([, p]) => p.provider === provider),
   );
   scoped.endpoints = Object.fromEntries(
-    Object.entries(store.endpoints).filter(([, endpoint]) => endpoint.provider === provider),
+    Object.entries(store.endpoints).filter(([, e]) => e.provider === provider),
   );
   scoped.commentsByPublication = Object.fromEntries(
     Object.entries(store.commentsByPublication)
-      .map(([key, comments]) => ({
-        key,
-        comments: comments.filter((comment) => comment.provider === provider),
-      }))
+      .map(([k, comments]) => ({ key: k, comments: comments.filter((c) => c.provider === provider) }))
       .filter(({ comments }) => comments.length)
       .map(({ key, comments }) => [key, comments]),
   );
   scoped.engagementsByPublication = Object.fromEntries(
     Object.entries(store.engagementsByPublication)
-      .map(([key, engagements]) => ({
-        key,
-        engagements: engagements.filter((engagement) => engagement.provider === provider),
-      }))
+      .map(([k, engagements]) => ({ key: k, engagements: engagements.filter((e) => e.provider === provider) }))
       .filter(({ engagements }) => engagements.length)
       .map(({ key, engagements }) => [key, engagements]),
   );
   scoped.trackedProfiles = store.trackedProfiles[provider]
-    ? { [provider]: store.trackedProfiles[provider] }
-    : {};
+    ? { [provider]: store.trackedProfiles[provider] } : {};
+
+  scoped.platforms = { ...scoped.platforms, [provider]: store.platforms[provider] };
 
   if (provider === "instagram") {
     scoped.instagramPublicationIdsByShortcode = store.instagramPublicationIdsByShortcode;
     scoped.instagramVisiblePublications = store.instagramVisiblePublications;
     scoped.instagramVisibleComments = store.instagramVisibleComments;
   }
-
   if (provider === "x") {
     scoped.communityReplies = store.communityReplies;
     scoped.tweets = store.tweets;
     scoped.favoriters = store.favoriters;
     scoped.accountInfo = store.accountInfo;
   }
-
   return scoped;
 }
 
-function emptyProviderSummary() {
-  return {
-    total_publications: 0,
-    total_comments: 0,
-    total_engagements: 0,
-    total_likes: 0,
-    total_views: 0,
-    unique_engagers: 0,
-  };
-}
-
 function endpointSummary(store: BackgroundStore) {
-  const summary: Record<
-    string,
-    { count: number; endpoint: string; lastSeen: null | string; provider: SocialProvider }
-  > = {};
+  const summary: Record<string, { count: number; endpoint: string; lastSeen: null | string; provider: SocialProvider }> = {};
   for (const [name, ep] of Object.entries(store.endpoints)) {
-    summary[name] = {
-      provider: ep.provider,
-      endpoint: ep.endpoint,
-      count: ep.count,
-      lastSeen: ep.lastSeen,
-    };
+    summary[name] = { provider: ep.provider, endpoint: ep.endpoint, count: ep.count, lastSeen: ep.lastSeen };
   }
   return summary;
 }
+
+// ---------------------------------------------------------------------------
+// Message handler
+// ---------------------------------------------------------------------------
 
 export function handleRuntimeMessage(
   store: BackgroundStore,
   request: RuntimeMessage,
   context: MessageContext = {},
 ): unknown {
+  // Provider context
   if (request.action === "SET_ACTIVE_PROVIDER") {
-    const previousProvider = store.activeProvider;
+    const prev = store.activeProvider;
     activateContext(store, request.provider, request.pageUrl);
-    if (previousProvider !== request.provider) {
-      context.log?.(`[Social Interceptor] provider ativo: ${request.provider || "nenhum"}`);
-    }
+    if (prev !== request.provider) context.log?.(`[Social Interceptor] provider ativo: ${request.provider || "nenhum"}`);
     return { activeProvider: store.activeProvider, success: true };
   }
 
@@ -926,39 +1332,31 @@ export function handleRuntimeMessage(
     return { success: true };
   }
 
+  // Instagram visible data
   if (request.action === "VISIBLE_PUBLICATIONS") {
-    const items: BackgroundStore["instagramVisiblePublications"] = request.items?.length
+    const items: InstagramStore["visiblePublications"] = request.items?.length
       ? request.items
-      : request.shortcodes.map((shortcode) => ({
-          shortcode,
-          url: `https://www.instagram.com/p/${shortcode}/`,
-        }));
-
+      : request.shortcodes.map((s) => ({ shortcode: s, url: `https://www.instagram.com/p/${s}/` }));
+    const istore = store.platforms.instagram;
     const filteredItems = visibleInstagramItemsForHandle(store, items);
+    istore.visiblePublications = filteredItems;
     store.instagramVisiblePublications = filteredItems;
     filteredItems.forEach((item, index) => {
-      const publicationId =
-        store.instagramPublicationIdsByShortcode[item.shortcode] || `shortcode:${item.shortcode}`;
+      const publicationId = istore.publicationIdsByShortcode[item.shortcode] || `shortcode:${item.shortcode}`;
       const key = publicationKey("instagram", publicationId);
-      const publication = store.publications[key];
-      if (publication) {
-        publication.visible_order = index + 1;
-        publication.visible_url = item.url;
-        if (publication.is_placeholder) {
-          publication.text = publication.text || item.text || "";
-          publication.type =
-            publication.type === "unknown" && item.mediaType ? item.mediaType : publication.type;
-          publication.author = {
-            ...publication.author,
-            username: publication.author.username || item.author?.username || "",
-            name: publication.author.name || item.author?.name || item.author?.username || "",
-            avatar_url: publication.author.avatar_url || item.author?.avatar_url || "",
-          };
-          publication.metrics.comment_count ||= item.metrics?.comment_count || 0;
-          publication.metrics.reply_count = publication.metrics.comment_count;
-          publication.metrics.like_count ||= item.metrics?.like_count || 0;
+      const pub = store.publications[key];
+      if (pub) {
+        pub.visible_order = index + 1;
+        pub.visible_url = item.url;
+        if (pub.is_placeholder) {
+          pub.text = pub.text || item.text || "";
+          pub.type = pub.type === "unknown" && item.mediaType ? item.mediaType : pub.type;
+          pub.author = { ...pub.author, username: pub.author.username || item.author?.username || "", name: pub.author.name || item.author?.name || item.author?.username || "", avatar_url: pub.author.avatar_url || item.author?.avatar_url || "" };
+          pub.metrics.comment_count ||= item.metrics?.comment_count || 0;
+          pub.metrics.reply_count = pub.metrics.comment_count;
+          pub.metrics.like_count ||= item.metrics?.like_count || 0;
         }
-        if (!publication.url) publication.url = item.url;
+        if (!pub.url) pub.url = item.url;
         return;
       }
       storePublication(store, instagramPlaceholderPublication(item, index + 1));
@@ -971,34 +1369,28 @@ export function handleRuntimeMessage(
     processVisibleInstagramComments(store, request);
     return { success: true };
   }
+
+  // Capture
   const capture = normalizeCapture(request);
   if (capture) {
     if (capture.pageUrl) store.providerPageUrls[capture.provider] = capture.pageUrl;
     recordRawPayload(store, capture.provider, capture.endpoint, capture.payload, capture.timestamp);
-
     if (capture.provider === "x") processXCapture(store, capture);
     if (capture.provider === "instagram") processInstagramCapture(store, capture);
-
-    context.log?.(
-      `[Social Interceptor] ${capture.provider}:${capture.endpoint} (publicações: ${Object.keys(store.publications).length})`,
-    );
+    if (capture.provider === "linkedin") processLinkedInCapture(store, capture);
+    context.log?.(`[Social Interceptor] ${capture.provider}:${capture.endpoint} (publicações: ${Object.keys(store.publications).length})`);
     return { success: true };
   }
 
+  // Handle management (legacy single)
   if (request.action === "SET_HANDLE") {
     const provider = request.provider ?? store.activeProvider;
-    if (provider || request.pageUrl) {
-      activateContext(store, provider, request.pageUrl);
-    }
+    if (provider || request.pageUrl) activateContext(store, provider, request.pageUrl);
     store.trackedHandle = request.handle;
     if (provider) store.trackedHandles[provider] = request.handle;
     context.persistHandle?.(request.handle);
     reprocessPayloads(store);
-    return {
-      success: true,
-      publicationCount: Object.keys(store.publications).length,
-      tweetCount: Object.keys(store.tweets).length,
-    };
+    return { success: true, publicationCount: Object.keys(store.publications).length, tweetCount: Object.keys(store.tweets).length };
   }
 
   if (request.action === "GET_HANDLE") {
@@ -1006,74 +1398,178 @@ export function handleRuntimeMessage(
     return { handle: provider ? store.trackedHandles[provider] || "" : store.trackedHandle };
   }
 
+  // Publications (legacy)
   if (request.action === "GET_PUBLICATIONS" || request.action === "GET_TWEETS") {
     const provider = request.provider ?? store.activeProvider;
     const publications = sortPublications(
-      Object.values(store.publications).filter(
-        (publication) => !provider || publication.provider === provider,
-      ),
+      Object.values(store.publications).filter((p) => !provider || p.provider === provider),
     );
-    const comments = Object.values(store.commentsByPublication)
-      .flat()
-      .filter((comment) => !provider || comment.provider === provider);
-    const engagements = Object.values(store.engagementsByPublication)
-      .flat()
-      .filter((engagement) => !provider || engagement.provider === provider);
+    const comments = Object.values(store.commentsByPublication).flat().filter((c) => !provider || c.provider === provider);
+    const engagements = Object.values(store.engagementsByPublication).flat().filter((e) => !provider || e.provider === provider);
     return {
-      publications,
-      commentsCount: comments.length,
-      engagementsCount: engagements.length,
-      tweets:
-        provider && provider !== "x"
-          ? []
-          : Object.values(store.tweets).sort(
-              (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
-            ),
+      publications, commentsCount: comments.length, engagementsCount: engagements.length,
+      tweets: provider && provider !== "x" ? [] : Object.values(store.tweets).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
       replyCount: provider && provider !== "x" ? 0 : Object.keys(store.communityReplies).length,
       accountInfo: provider && provider !== "x" ? null : store.accountInfo,
-      trackedProfiles: store.trackedProfiles,
-      lastUpdated: store.lastUpdated,
+      trackedProfiles: store.trackedProfiles, lastUpdated: store.lastUpdated,
     };
   }
 
+  // Export (legacy v2 - kept for compatibility)
   if (request.action === "GET_EXPORT") {
-    return buildExportJSON(storeForProvider(store, request.provider ?? store.activeProvider));
+    if (request.provider) {
+      return buildExportJSON(storeForProvider(store, request.provider ?? store.activeProvider));
+    }
+    return buildExportJSON(store);
   }
 
+  // Endpoints
   if (request.action === "GET_ENDPOINTS") {
     const provider = request.provider ?? store.activeProvider;
-    const endpoints = endpointSummary(store);
-    return {
-      endpoints: Object.fromEntries(
-        Object.entries(endpoints).filter(
-          ([, endpoint]) => !provider || endpoint.provider === provider,
-        ),
-      ),
-      lastUpdated: store.lastUpdated,
-    };
+    return { endpoints: Object.fromEntries(Object.entries(endpointSummary(store)).filter(([, ep]) => !provider || ep.provider === provider)), lastUpdated: store.lastUpdated };
   }
 
   if (request.action === "GET_ENDPOINT_PAYLOADS") {
-    const ep =
-      store.endpoints[request.endpoint] ||
-      Object.values(store.endpoints).find((endpoint) => endpoint.endpoint === request.endpoint);
+    const ep = store.endpoints[request.endpoint] || Object.values(store.endpoints).find((e) => e.endpoint === request.endpoint);
     return { payloads: ep ? ep.payloads : [] };
   }
 
   if (request.action === "GET_ALL_RAW") {
     const provider = request.provider ?? store.activeProvider;
-    return {
-      endpoints: Object.fromEntries(
-        Object.entries(store.endpoints).filter(
-          ([, endpoint]) => !provider || endpoint.provider === provider,
-        ),
-      ),
-    };
+    return { endpoints: Object.fromEntries(Object.entries(store.endpoints).filter(([, ep]) => !provider || ep.provider === provider)) };
   }
 
+  // Clear
   if (request.action === "CLEAR_ALL") {
     clearDisplayedData(store);
     return { success: true };
+  }
+
+  // -----------------------------------------------------------------------
+  // NEW: Multi-platform popup messages
+  // -----------------------------------------------------------------------
+
+  if (request.action === "GET_HANDLES") {
+    return { handles: store.trackedHandles };
+  }
+
+  if (request.action === "SET_HANDLES") {
+    for (const [provider, handle] of Object.entries(request.handles)) {
+      if (handle !== undefined) {
+        store.trackedHandles[provider as SocialProvider] = handle;
+      }
+    }
+    const firstHandle = Object.values(request.handles).find(Boolean) || "";
+    if (firstHandle) store.trackedHandle = firstHandle;
+    context.persistHandle?.(firstHandle);
+    reprocessPayloads(store);
+    return { success: true };
+  }
+
+  if (request.action === "GET_PLATFORM_DATA") {
+    const provider = request.provider;
+    if (provider === "x") {
+      const xstore = store.platforms.x;
+      return {
+        type: "x" as const,
+        publications: xstore.publications,
+        commentsByPublication: xstore.commentsByPublication,
+        engagementsByPublication: xstore.engagementsByPublication,
+        tweets: xstore.tweets,
+        favoriters: xstore.favoriters,
+        communityReplies: xstore.communityReplies,
+        accountInfo: xstore.accountInfo,
+        lastUpdated: store.lastUpdated,
+      };
+    }
+    if (provider === "instagram") {
+      const istore = store.platforms.instagram;
+      const normalized: NormalizedStore = {
+        publications: istore.publications,
+        commentsByPublication: istore.commentsByPublication,
+        engagementsByPublication: istore.engagementsByPublication,
+      };
+      return {
+        type: "instagram" as const,
+        ...normalized,
+        visibleCount: istore.visiblePublications.length,
+        lastUpdated: store.lastUpdated,
+      };
+    }
+    if (provider === "linkedin") {
+      const lstore = store.platforms.linkedin;
+      const enriched = (lstore.feedOrder || [])
+        .map((id) => {
+          const post = lstore.posts[id];
+          if (!post) return null;
+          const shareUrn = post.share_urn;
+          const activityUrn = post.activity_urn;
+          const reactions = lstore.reactions[shareUrn] || lstore.reactions[activityUrn];
+          const reposts = lstore.reposts[shareUrn];
+          const comments = lstore.comments[shareUrn] || lstore.comments[activityUrn];
+          return {
+            ...post,
+            engagers: {
+              reactions: { captured: reactions?.users?.length || 0, total: reactions?.total || 0 },
+              reposts: { captured: reposts?.users?.length || 0, total: reposts?.total || 0 },
+              comments: { captured: comments?.items?.length || 0, total: comments?.total || 0 },
+            },
+          };
+        })
+        .filter(Boolean);
+      return { type: "linkedin" as const, content: enriched, lastUpdated: store.lastUpdated };
+    }
+    return { type: "unknown", publications: [], commentsByPublication: {}, engagementsByPublication: {} };
+  }
+
+  if (request.action === "GET_ALL_SUMMARY") {
+    const byPlatform: Record<string, { content_count: number; engager_count: number }> = {};
+
+    // X
+    const xPubs = Object.values(store.platforms.x.publications);
+    const xEngagers = new Set<string>();
+    for (const favs of Object.values(store.platforms.x.favoriters)) {
+      for (const f of favs) xEngagers.add(f.rest_id || f.screen_name);
+    }
+    byPlatform.x = { content_count: xPubs.length, engager_count: xEngagers.size };
+
+    // Instagram
+    const igPubs = Object.values(store.platforms.instagram.publications);
+    const igEngs = Object.values(store.platforms.instagram.engagementsByPublication).flat();
+    const igEngagers = new Set(igEngs.map((e) => e.actor.provider_user_id || e.actor.username));
+    byPlatform.instagram = { content_count: igPubs.length, engager_count: igEngagers.size };
+
+    // LinkedIn
+    const liPubs = Object.values(store.platforms.linkedin.posts);
+    const liEngagers = new Set<string>();
+    for (const entry of Object.values(store.platforms.linkedin.reactions)) {
+      for (const u of entry.users) liEngagers.add(u.provider_user_id || u.username);
+    }
+    for (const entry of Object.values(store.platforms.linkedin.reposts)) {
+      for (const u of entry.users) liEngagers.add(u.urn || u.activity_urn || "");
+    }
+    for (const entry of Object.values(store.platforms.linkedin.comments)) {
+      for (const c of entry.items) liEngagers.add(c.author.provider_user_id || c.author.username);
+    }
+    byPlatform.linkedin = { content_count: liPubs.length, engager_count: liEngagers.size };
+
+    const total = xPubs.length + igPubs.length + liPubs.length;
+    const allEngagers = new Set([...xEngagers, ...igEngagers, ...liEngagers]);
+    return {
+      total_content: total,
+      total_engagers: allEngagers.size,
+      by_platform: byPlatform,
+      lastUpdated: store.lastUpdated,
+    };
+  }
+
+  if (request.action === "GET_RAW_PAYLOADS") {
+    const provider = request.provider;
+    return {
+      endpoints: Object.fromEntries(
+        Object.entries(store.endpoints).filter(([, ep]) => !provider || ep.provider === provider),
+      ),
+    };
   }
 
   return undefined;
