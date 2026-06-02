@@ -1,19 +1,33 @@
+import { captureFacetForHost } from "../capture/registry";
+import type {
+  AnyLiveDomScrapeStrategy,
+  CaptureFacet,
+  EmbeddedCodeScanStrategy,
+} from "../capture/strategies";
 import { providerForHost } from "../providers/meta";
 import type { PageCapturedMessage, PageGraphqlMessage } from "../shared/messages";
 
-const sentInstagramScripts = new Set<string>();
-const processedLinkedInBprGuids = new Set<string>();
+// Motor de captura no DOM (ISOLATED world). Antes este arquivo tinha blocos hardcoded por
+// host (scan SSR + scrape do Instagram, scan BPR do LinkedIn). Agora ele resolve a faceta de
+// captura do provider ativo no registry e roda, de forma genérica, as estratégias declaradas:
+//   - ssrScriptScan  -> varre <script> SSR e emite CAPTURED_PAYLOAD;
+//   - embeddedCodeScan -> varre/observa elementos <code> embutidos e emite CAPTURED_PAYLOAD;
+//   - liveDomScrapes -> lê o DOM renderizado e emite as mensagens VISIBLE_* (via toMessage).
+// As mensagens e o agendamento (timers/observers) são idênticos aos de antes.
+
+const activeFacet = captureFacetForHost(location.hostname);
+
+const sentScripts = new Set<string>();
+const lastScrapeSignatures = new Map<string, string>();
 let lastAnnouncedPageUrl = "";
 let visibleOrderTimer: number | null = null;
-let lastVisibleOrderSignature = "";
 let visibleCommentsTimer: number | null = null;
-let lastVisibleCommentsSignature = "";
 let scanTimerA: number | null = null;
 let scanTimerB: number | null = null;
 let urlCheckTimer: number | null = null;
 let extensionContextActive = true;
-let instagramObserver: MutationObserver | null = null;
-let linkedinObserver: MutationObserver | null = null;
+let scrapeObserver: MutationObserver | null = null;
+let embeddedObserver: MutationObserver | null = null;
 
 function stopAfterInvalidContext() {
   extensionContextActive = false;
@@ -27,8 +41,8 @@ function stopAfterInvalidContext() {
   scanTimerA = null;
   scanTimerB = null;
   urlCheckTimer = null;
-  instagramObserver?.disconnect();
-  linkedinObserver?.disconnect();
+  scrapeObserver?.disconnect();
+  embeddedObserver?.disconnect();
   window.removeEventListener("message", handlePageMessage);
 }
 
@@ -85,12 +99,11 @@ announcePageSession();
 
 function handleUrlChange() {
   if (!extensionContextActive || location.href === lastAnnouncedPageUrl) return;
-  sentInstagramScripts.clear();
-  lastVisibleOrderSignature = "";
-  lastVisibleCommentsSignature = "";
+  sentScripts.clear();
+  lastScrapeSignatures.clear();
   announcePageSession();
-  if (location.hostname.includes("instagram.com")) {
-    scheduleInstagramScan();
+  if (activeFacet?.ssrScriptScan || activeFacet?.liveDomScrapes?.length) {
+    scheduleDomScan();
   }
 }
 
@@ -146,56 +159,30 @@ function handlePageMessage(event: MessageEvent<PageCapturedMessage | PageGraphql
 
 window.addEventListener("message", handlePageMessage);
 
-function currentInstagramShortcode() {
-  if (!location.hostname.includes("instagram.com")) return null;
-  return location.pathname.match(/\/(?:p|reel|reels)\/([^/?#]+)/)?.[1] || null;
-}
+// === ssrScriptScan runner ==================================================
 
-function instagramScriptEndpoint(text: string, shortcode: null | string) {
-  if (text.includes("xdt_api__v1__media__media_id__comments__connection")) {
-    return "InstagramComments";
-  }
-  if (text.includes("xdt_api__v1__feed__timeline__connection")) {
-    return "InstagramFeedSSR";
-  }
-  if (
-    shortcode &&
-    text.includes(shortcode) &&
-    text.includes('"like_count"') &&
-    text.includes('"comment_count"')
-  ) {
-    return "InstagramPageSSR";
-  }
-  if (
-    text.includes('"code"') &&
-    text.includes('"like_count"') &&
-    text.includes('"comment_count"') &&
-    (text.includes('"profile_pic_url"') || text.includes('"media_type"'))
-  ) {
-    return "InstagramInitialSSR";
-  }
-  return null;
-}
-
-function scanInstagramSsrScripts() {
+function runSsrScriptScan(facet: CaptureFacet) {
   if (!extensionContextActive) return;
-  const shortcode = currentInstagramShortcode();
+  const strategy = facet.ssrScriptScan;
+  if (!strategy) return;
+  const ctx = { pathname: location.pathname, href: location.href };
 
   for (const [index, script] of Array.from(document.scripts).entries()) {
     const text = script.textContent || "";
-    const endpoint = instagramScriptEndpoint(text, shortcode);
-    if (!endpoint) continue;
+    const matched = strategy.match(text, ctx);
+    if (!matched) continue;
+    const endpoint = matched.endpoint;
 
     const key = `${location.pathname}:${endpoint}:${index}:${text.length}`;
-    if (sentInstagramScripts.has(key)) continue;
+    if (sentScripts.has(key)) continue;
 
     try {
       const payload = JSON.parse(text);
-      sentInstagramScripts.add(key);
-      console.log(`[He4rt Analytics] SSR instagram:${endpoint}`);
+      sentScripts.add(key);
+      console.log(`[He4rt Analytics] SSR ${facet.id}:${endpoint}`);
       sendRuntimeMessage({
         action: "CAPTURED_PAYLOAD",
-        provider: "instagram",
+        provider: facet.id,
         endpoint,
         url: location.href,
         payload,
@@ -206,395 +193,105 @@ function scanInstagramSsrScripts() {
   }
 }
 
-function collectVisibleInstagramPublications() {
-  const seen = new Set<string>();
-  const items: Array<{
-    author?: {
-      avatar_url?: string;
-      name?: string;
-      username?: string;
-    };
-    mediaType?: "carousel" | "image" | "reel" | "unknown" | "video";
-    metrics?: {
-      comment_count?: number;
-      like_count?: number;
-    };
-    shortcode: string;
-    text?: string;
-    url: string;
-  }> = [];
+// === liveDomScrape runner ==================================================
 
-  const currentShortcode = currentInstagramShortcode();
-  if (currentShortcode) {
-    const mediaRoot = document.querySelector("article") || document.querySelector("main");
-    const author = inferVisibleInstagramAuthor(mediaRoot);
-    const text = inferVisibleInstagramText(null, mediaRoot, author.username);
-    const metrics = inferVisibleInstagramMetrics(mediaRoot);
-    seen.add(currentShortcode);
-    items.push({
-      author,
-      mediaType:
-        location.pathname.includes("/reel/") || location.pathname.includes("/reels/")
-          ? "reel"
-          : "unknown",
-      metrics,
-      shortcode: currentShortcode,
-      text,
-      url: `https://www.instagram.com${location.pathname}`,
-    });
-  }
-
-  for (const anchor of Array.from(document.querySelectorAll<HTMLAnchorElement>("a[href]"))) {
-    const href = anchor.getAttribute("href") || "";
-    const shortcode = href.match(/^\/(?:p|reel|reels)\/([^/?#]+)\/?$/)?.[1];
-    if (!shortcode || seen.has(shortcode)) continue;
-    const mediaRoot = anchor.closest("article") || anchor.closest("main") || anchor.parentElement;
-    const author = inferVisibleInstagramAuthor(mediaRoot);
-    const text = inferVisibleInstagramText(anchor, mediaRoot, author.username);
-    const mediaType = inferVisibleInstagramMediaType(href, anchor, mediaRoot);
-    const metrics = inferVisibleInstagramMetrics(mediaRoot);
-    seen.add(shortcode);
-    items.push({
-      author,
-      mediaType,
-      metrics,
-      shortcode,
-      text,
-      url: new URL(href, location.origin).toString(),
-    });
-  }
-  return items;
-}
-
-function inferVisibleInstagramAuthor(root: Element | null) {
-  const profileLink = Array.from(root?.querySelectorAll<HTMLAnchorElement>("a[href]") || []).find(
-    (link) => /^\/[A-Za-z0-9._]+\/?$/.test(link.getAttribute("href") || ""),
-  );
-  const username = (profileLink?.getAttribute("href") || "").replaceAll("/", "").trim();
-  const profileImage = Array.from(root?.querySelectorAll<HTMLImageElement>("img[alt]") || []).find(
-    (image) => image.alt.includes("'s profile picture"),
-  );
-  const nameFromAlt = profileImage?.alt.replace(/'s profile picture$/, "") || "";
-  return {
-    username,
-    name: nameFromAlt || username,
-    avatar_url: profileImage?.currentSrc || profileImage?.src || "",
-  };
-}
-
-function inferVisibleInstagramText(
-  anchor: HTMLAnchorElement | null,
-  root: Element | null,
-  username?: string,
-) {
-  const postImageAlt = Array.from(root?.querySelectorAll<HTMLImageElement>("img[alt]") || [])
-    .map((image) => image.alt.trim())
-    .find((alt) => alt && !alt.includes("'s profile picture"));
-  if (postImageAlt) return postImageAlt;
-
-  const rootText = (root?.textContent || "").replace(/\s+/g, " ").trim();
-  if (!rootText || !username) return anchor?.getAttribute("aria-label") || "";
-  const repeatedAuthor = rootText.lastIndexOf(username);
-  if (repeatedAuthor === -1) return anchor?.getAttribute("aria-label") || "";
-  return rootText
-    .slice(repeatedAuthor + username.length)
-    .replace(/\bmore$/i, "")
-    .trim();
-}
-
-function inferVisibleInstagramMetrics(root: Element | null) {
-  const text = (root?.textContent || "").replace(/\s+/g, "");
-  return {
-    comment_count: parseCompactNumber(text.match(/Comment([\d.,]+[KkMm]?)/)?.[1]),
-    like_count: parseCompactNumber(text.match(/Likedby[\w.]+and([\d.,]+[KkMm]?)others/i)?.[1]),
-  };
-}
-
-function parseCompactNumber(value?: string) {
-  if (!value) return 0;
-  const normalized = value.replace(",", ".").toLowerCase();
-  const number = Number.parseFloat(normalized);
-  if (!Number.isFinite(number)) return 0;
-  if (normalized.endsWith("k")) return Math.round(number * 1000);
-  if (normalized.endsWith("m")) return Math.round(number * 1_000_000);
-  return Math.round(number);
-}
-
-function parseVisibleCount(text: string) {
-  return parseCompactNumber(text.replace(/\s+/g, "").match(/([\d.,]+[KkMm]?)/)?.[1]);
-}
-
-function inferVisibleInstagramMediaType(
-  href: string,
-  anchor: HTMLAnchorElement,
-  mediaRoot: Element | null,
-) {
-  if (/^\/(?:reel|reels)\//.test(href)) return "reel";
-  if (anchor.querySelector("video") || mediaRoot?.querySelector("video")) return "video";
-  if (anchor.querySelectorAll("img").length > 1) return "carousel";
-  if (anchor.querySelector("img")) return "image";
-  return "unknown";
-}
-
-function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function compactDomText(value: null | string | undefined) {
-  return (value || "").replace(/\s+/g, " ").trim();
-}
-
-function currentInstagramCommentPageShortcode() {
-  return currentInstagramShortcode() || "";
-}
-
-function parseInstagramCommentHref(href: string) {
-  const match = href.match(/\/(?:p|reel|reels)\/([^/?#]+)\/c\/([^/?#]+)/);
-  if (!match) return null;
-  return {
-    publicationShortcode: match[1] || "",
-    commentId: match[2] || "",
-  };
-}
-
-function findInstagramCommentRoot(anchor: HTMLAnchorElement) {
-  let best: Element | null = null;
-  let current: Element | null = anchor.parentElement;
-
-  while (current && current !== document.body && current !== document.documentElement) {
-    const commentLinkCount = Array.from(
-      current.querySelectorAll<HTMLAnchorElement>("a[href]"),
-    ).filter((link) => parseInstagramCommentHref(link.getAttribute("href") || "")).length;
-    const text = compactDomText(current.textContent);
-
-    if (commentLinkCount > 1) break;
-    if (commentLinkCount === 1 && /(Reply|Responder|Like|Curtir)/i.test(text)) {
-      best = current;
-    }
-    current = current.parentElement;
-  }
-
-  return best || anchor.parentElement;
-}
-
-function inferInstagramCommentAuthor(root: Element | null) {
-  const profileLinks = Array.from(root?.querySelectorAll<HTMLAnchorElement>("a[href]") || [])
-    .map((link) => {
-      const href = link.getAttribute("href") || "";
-      const username = href.match(/^\/([A-Za-z0-9._]+)\/?$/)?.[1] || "";
-      return { link, username, text: compactDomText(link.textContent) };
-    })
-    .filter((item) => item.username && !item.text.startsWith("@"));
-  const authorLink =
-    profileLinks.find((item) => item.text?.includes(item.username)) || profileLinks[0];
-  const profileImage = Array.from(root?.querySelectorAll<HTMLImageElement>("img[alt]") || []).find(
-    (image) => image.alt.includes("'s profile picture"),
-  );
-  const username = authorLink?.username || "";
-  const nameFromAlt = profileImage?.alt.replace(/'s profile picture$/, "") || "";
-
-  return {
-    provider_user_id: "",
-    username,
-    name: nameFromAlt || username,
-    avatar_url: profileImage?.currentSrc || profileImage?.src || "",
-  };
-}
-
-function inferInstagramCommentRelativeTime(root: Element | null, commentId: string) {
-  const link = Array.from(root?.querySelectorAll<HTMLAnchorElement>("a[href]") || []).find((item) =>
-    (item.getAttribute("href") || "").includes(`/c/${commentId}`),
-  );
-  return compactDomText(link?.textContent);
-}
-
-function inferInstagramCommentLikeCount(root: Element | null) {
-  const buttonText = Array.from(root?.querySelectorAll<HTMLButtonElement>("button") || [])
-    .map((button) => compactDomText(button.textContent))
-    .find((text) => /\d/.test(text) && /\b(like|curtida)/i.test(text));
-  if (buttonText) return parseVisibleCount(buttonText);
-
-  const rootText = compactDomText(root?.textContent);
-  return parseVisibleCount(rootText.match(/\b[\d.,]+[KkMm]?\s+(?:likes?|curtidas?)\b/i)?.[0] || "");
-}
-
-function inferInstagramCommentText(
-  root: Element | null,
-  username: string,
-  relativeCreatedAt: string,
-) {
-  let text = compactDomText(root?.textContent);
-  if (!text) return "";
-
-  if (username) {
-    text = text.replace(new RegExp(`^${escapeRegExp(username)}(?:Verified)?\\s*`, "i"), "");
-  }
-  if (relativeCreatedAt) {
-    text = text.replace(new RegExp(`^${escapeRegExp(relativeCreatedAt)}\\s*`, "i"), "");
-  } else {
-    text = text.replace(/^(?:\d+[smhdw]|now|agora)\s*/i, "");
-  }
-
-  text = text
-    .replace(/[\d.,]+[KkMm]?\s+(?:likes?|curtidas?).*$/i, "")
-    .replace(/(?:Reply|Responder).*$/i, "")
-    .replace(/(?:Like|Curtir).*$/i, "")
-    .replace(/(?:View all|Ver todas?|Hide all|Ocultar).+$/i, "")
-    .trim();
-
-  return text;
-}
-
-function inferInstagramParentCommentId(root: Element | null, commentId: string) {
-  let current = root?.parentElement || null;
-
-  while (current && current !== document.body && current !== document.documentElement) {
-    const commentIds = Array.from(current.querySelectorAll<HTMLAnchorElement>("a[href]"))
-      .map((link) => parseInstagramCommentHref(link.getAttribute("href") || "")?.commentId)
-      .filter((id): id is string => Boolean(id));
-    const currentIndex = commentIds.indexOf(commentId);
-
-    if (
-      currentIndex > 0 &&
-      /(Hide all replies|Ocultar|Ver respostas|View all)/i.test(compactDomText(current.textContent))
-    ) {
-      return commentIds[currentIndex - 1] || null;
-    }
-
-    current = current.parentElement;
-  }
-
-  return null;
-}
-
-function collectVisibleInstagramComments() {
-  const comments = new Map<
-    string,
-    {
-      author: {
-        avatar_url?: string;
-        name?: string;
-        provider_user_id?: string;
-        username: string;
-      };
-      comment_id: string;
-      like_count: number;
-      parent_comment_id: null | string;
-      publication_shortcode: string;
-      relative_created_at?: string;
-      source: string;
-      text: string;
-    }
-  >();
-  const currentShortcode = currentInstagramCommentPageShortcode();
-
-  for (const anchor of Array.from(document.querySelectorAll<HTMLAnchorElement>("a[href]"))) {
-    const parsed = parseInstagramCommentHref(anchor.getAttribute("href") || "");
-    if (!parsed?.commentId || !parsed.publicationShortcode) continue;
-    if (currentShortcode && parsed.publicationShortcode !== currentShortcode) continue;
-
-    const root = findInstagramCommentRoot(anchor);
-    const author = inferInstagramCommentAuthor(root);
-    const relativeCreatedAt = inferInstagramCommentRelativeTime(root, parsed.commentId);
-    const text = inferInstagramCommentText(root, author.username, relativeCreatedAt);
-    if (!author.username || !text) continue;
-
-    comments.set(parsed.commentId, {
-      author,
-      comment_id: parsed.commentId,
-      like_count: inferInstagramCommentLikeCount(root),
-      parent_comment_id: inferInstagramParentCommentId(root, parsed.commentId),
-      publication_shortcode: parsed.publicationShortcode,
-      relative_created_at: relativeCreatedAt || undefined,
-      source: "Instagram DOM",
-      text,
-    });
-  }
-
-  return [...comments.values()];
-}
-
-function publishVisibleInstagramComments() {
+// Roda um scrape e emite a mensagem SÓ quando a assinatura muda E o toMessage retorna um
+// envelope (os guards específicos vivem no toMessage do provider). A assinatura só é
+// comitada num envio efetivo — preserva o comportamento original em que lastSignature era
+// atualizado apenas ao enviar, nunca quando um guard barrava o envio.
+function runScrape(strategy: AnyLiveDomScrapeStrategy) {
   if (!extensionContextActive) return;
-  const publicationShortcode = currentInstagramCommentPageShortcode();
-  if (!publicationShortcode) return;
+  const items = strategy.extract(document);
+  const signature = strategy.signature(items);
+  if (signature === lastScrapeSignatures.get(strategy.endpoint)) return;
 
-  const commentLinkCount = Array.from(
-    document.querySelectorAll<HTMLAnchorElement>("a[href]"),
-  ).filter((anchor) => parseInstagramCommentHref(anchor.getAttribute("href") || "")).length;
-  const comments = collectVisibleInstagramComments();
-  if (commentLinkCount > 0 && !comments.length) return;
-  if (!comments.length) return;
+  const message = strategy.toMessage(items, document);
+  if (!message) return;
 
-  const signature = comments
-    .map((comment) => `${comment.comment_id}:${comment.text}:${comment.like_count}`)
-    .sort()
-    .join("|");
-  if (signature === lastVisibleCommentsSignature) return;
-  lastVisibleCommentsSignature = signature;
-
-  sendRuntimeMessage({
-    action: "VISIBLE_COMMENTS",
-    provider: "instagram",
-    pageUrl: location.href,
-    publication_shortcode: publicationShortcode,
-    captured_at: new Date().toISOString(),
-    comments,
-  });
+  lastScrapeSignatures.set(strategy.endpoint, signature);
+  sendRuntimeMessage(message as unknown as Record<string, unknown>);
 }
 
-function publishVisibleInstagramOrder() {
-  if (!extensionContextActive) return;
-  const items = collectVisibleInstagramPublications();
-  if (!items.length) return;
-  const signature = items.map((item) => item.shortcode).join(",");
-  if (signature === lastVisibleOrderSignature) return;
-  lastVisibleOrderSignature = signature;
-  sendRuntimeMessage({
-    action: "VISIBLE_PUBLICATIONS",
-    provider: "instagram",
-    pageUrl: location.href,
-    shortcodes: items.map((item) => item.shortcode),
-    items,
-  });
+// Mantém o agendamento original do Instagram: scrape de ordem em 400ms, de comentários em
+// 500ms. O primeiro liveDomScrape declarado mapeia o timer de "ordem" e o segundo o de
+// "comentários", espelhando publishVisibleInstagramOrder/Comments.
+function scrapeAt(index: number) {
+  return activeFacet?.liveDomScrapes?.[index] ?? null;
 }
 
 function scheduleVisibleOrder() {
   if (!extensionContextActive) return;
+  const strategy = scrapeAt(0);
+  if (!strategy) return;
   if (visibleOrderTimer) clearTimeout(visibleOrderTimer);
   visibleOrderTimer = window.setTimeout(() => {
     visibleOrderTimer = null;
-    publishVisibleInstagramOrder();
+    runScrape(strategy);
   }, 400);
 }
 
 function scheduleVisibleComments() {
   if (!extensionContextActive) return;
+  const strategy = scrapeAt(1);
+  if (!strategy) return;
   if (visibleCommentsTimer) clearTimeout(visibleCommentsTimer);
   visibleCommentsTimer = window.setTimeout(() => {
     visibleCommentsTimer = null;
-    publishVisibleInstagramComments();
+    runScrape(strategy);
   }, 500);
 }
 
-function scheduleInstagramScan() {
+function scheduleDomScan() {
   if (!extensionContextActive) return;
-  if (scanTimerA) clearTimeout(scanTimerA);
-  if (scanTimerB) clearTimeout(scanTimerB);
-  scanTimerA = window.setTimeout(scanInstagramSsrScripts, 500);
-  scanTimerB = window.setTimeout(scanInstagramSsrScripts, 2000);
+  if (activeFacet?.ssrScriptScan) {
+    if (scanTimerA) clearTimeout(scanTimerA);
+    if (scanTimerB) clearTimeout(scanTimerB);
+    scanTimerA = window.setTimeout(() => activeFacet && runSsrScriptScan(activeFacet), 500);
+    scanTimerB = window.setTimeout(() => activeFacet && runSsrScriptScan(activeFacet), 2000);
+  }
   scheduleVisibleOrder();
   scheduleVisibleComments();
 }
 
-if (location.hostname.includes("instagram.com")) {
+// === embeddedCodeScan runner ===============================================
+
+function processEmbeddedElement(
+  facet: CaptureFacet,
+  strategy: EmbeddedCodeScanStrategy,
+  el: Element,
+) {
+  const result = strategy.parse(el.textContent || "", el);
+  if (!result) return;
+  sendRuntimeMessage({
+    action: "CAPTURED_PAYLOAD",
+    provider: facet.id,
+    endpoint: result.endpoint,
+    url: result.url ?? location.href,
+    payload: result.payload,
+    timestamp: new Date().toISOString(),
+    pageUrl: location.href,
+  });
+}
+
+function scanEmbeddedElements(facet: CaptureFacet) {
+  if (!extensionContextActive) return;
+  const strategy = facet.embeddedCodeScan;
+  if (!strategy) return;
+  for (const el of document.querySelectorAll(strategy.selector)) {
+    processEmbeddedElement(facet, strategy, el);
+  }
+}
+
+// === activation ============================================================
+
+if (activeFacet?.ssrScriptScan || activeFacet?.liveDomScrapes?.length) {
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", scheduleInstagramScan, { once: true });
+    document.addEventListener("DOMContentLoaded", scheduleDomScan, { once: true });
   } else {
-    scheduleInstagramScan();
+    scheduleDomScan();
   }
 
-  instagramObserver = new MutationObserver((mutations) => {
+  scrapeObserver = new MutationObserver((mutations) => {
     if (!extensionContextActive) return;
     if (
       mutations.some((mutation) =>
@@ -607,112 +304,45 @@ if (location.hostname.includes("instagram.com")) {
       )
     ) {
       handleUrlChange();
-      scheduleInstagramScan();
+      scheduleDomScan();
     }
   });
-  instagramObserver.observe(document.documentElement, { childList: true, subtree: true });
+  scrapeObserver.observe(document.documentElement, { childList: true, subtree: true });
   window.addEventListener("scroll", () => {
     scheduleVisibleOrder();
     scheduleVisibleComments();
   });
 }
 
-if (location.hostname === "www.linkedin.com" || location.hostname === "linkedin.com") {
+if (activeFacet?.embeddedCodeScan) {
+  const facet = activeFacet;
+  const strategy: EmbeddedCodeScanStrategy = activeFacet.embeddedCodeScan;
   if (document.readyState === "loading") {
     document.addEventListener(
       "DOMContentLoaded",
       () => {
-        scanLinkedInBprElements();
+        scanEmbeddedElements(facet);
       },
       { once: true },
     );
   } else {
-    scanLinkedInBprElements();
+    scanEmbeddedElements(facet);
   }
 
-  linkedinObserver = new MutationObserver((mutations) => {
+  embeddedObserver = new MutationObserver((mutations) => {
     if (!extensionContextActive) return;
     for (const mutation of mutations) {
       for (const node of mutation.addedNodes) {
         if (node.nodeType !== Node.ELEMENT_NODE) continue;
         const el = node as Element;
-        if (el.tagName === "CODE" && el.id?.startsWith("bpr-guid-")) {
-          processLinkedInBprElement(el as HTMLElement);
+        if (strategy.match(el)) {
+          processEmbeddedElement(facet, strategy, el);
         } else if (el.querySelectorAll) {
-          const nested = el.querySelectorAll<HTMLElement>('code[id^="bpr-guid-"]');
-          for (const code of nested) processLinkedInBprElement(code);
+          const nested = el.querySelectorAll(strategy.selector);
+          for (const code of nested) processEmbeddedElement(facet, strategy, code);
         }
       }
     }
   });
-  linkedinObserver.observe(document.documentElement, { childList: true, subtree: true });
-}
-
-function unescapeHtml(str: string): string {
-  return str
-    .replace(/&quot;/g, '"')
-    .replace(/&#92;u/g, "\\u")
-    .replace(/&#(\d+);/g, (_: string, c: string) => String.fromCharCode(Number(c)))
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&#39;/g, "'");
-}
-
-function normalizeKeys(obj: unknown): unknown {
-  if (obj === null || obj === undefined || typeof obj !== "object") return obj;
-  if (Array.isArray(obj)) return obj.map(normalizeKeys);
-  const normalized: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(obj)) {
-    normalized[key.trim()] = normalizeKeys(value);
-  }
-  return normalized;
-}
-
-function processLinkedInBprElement(codeEl: HTMLElement) {
-  const id = codeEl.id;
-  if (!id?.startsWith("bpr-guid-")) return;
-  const guid = id.replace("bpr-guid-", "");
-  if (processedLinkedInBprGuids.has(guid)) return;
-  processedLinkedInBprGuids.add(guid);
-
-  try {
-    const raw = codeEl.textContent || "";
-    if (raw.length < 50) return;
-    const unescaped = unescapeHtml(raw);
-    const parsed = JSON.parse(unescaped);
-    const normalized = normalizeKeys(parsed) as Record<string, unknown>;
-    const innerData =
-      ((normalized?.data as Record<string, unknown>)?.data as Record<string, unknown>) || {};
-
-    const feedKey = Object.keys(innerData).find(
-      (k) =>
-        k.startsWith("feedDashOrganizationalPageUpdates") &&
-        Array.isArray((innerData[k] as Record<string, unknown>)?.["*elements"]),
-    );
-    if (!feedKey) return;
-
-    const elements = (innerData[feedKey] as Record<string, unknown>)?.["*elements"] as
-      | string[]
-      | undefined;
-    if (!elements?.length) return;
-
-    sendRuntimeMessage({
-      action: "CAPTURED_PAYLOAD",
-      provider: "linkedin",
-      endpoint: "feedDashOrganizationalPageUpdates",
-      url: `https://www.linkedin.com/bpr/${feedKey}`,
-      payload: normalized,
-      timestamp: new Date().toISOString(),
-      pageUrl: location.href,
-    });
-  } catch {
-    // BPR parse failure is non-critical
-  }
-}
-
-function scanLinkedInBprElements() {
-  if (!extensionContextActive) return;
-  const codes = document.querySelectorAll<HTMLElement>('code[id^="bpr-guid-"]');
-  for (const el of codes) processLinkedInBprElement(el);
+  embeddedObserver.observe(document.documentElement, { childList: true, subtree: true });
 }
