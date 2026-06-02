@@ -328,3 +328,98 @@ body {
   border-color: #1d9bf0;
   color: #1d9bf0;
 }
+
+/* Summary cards (All tab) */
+.summary-cards {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid #2f3336;
+}
+.summary-card {
+  flex: 1;
+  background: #16181c;
+  border: 1px solid #2f3336;
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.summary-provider {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.summary-count {
+  font-size: 24px;
+  font-weight: 700;
+  color: #e7e9ea;
+}
+.summary-label {
+  font-size: 11px;
+  color: #71767b;
+}
+
+/* Config tab */
+.config-section {
+  padding: 16px;
+  border-bottom: 1px solid #2f3336;
+}
+.config-section h3 {
+  font-size: 14px;
+  font-weight: 700;
+  color: #e7e9ea;
+  margin-bottom: 12px;
+}
+.handle-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  background: #16181c;
+  border: 1px solid #2f3336;
+  border-radius: 20px;
+  padding: 0 4px 0 12px;
+}
+.handle-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.handle-provider {
+  font-size: 12px;
+  font-weight: 700;
+}
+.handle-group .at-sign {
+  font-size: 14px;
+}
+.handle-input {
+  flex: 1;
+  background: none;
+  border: none;
+  color: #e7e9ea;
+  font-size: 14px;
+  padding: 8px 6px;
+  outline: none;
+  min-width: 0;
+}
+.handle-input::placeholder {
+  color: #536471;
+}
+.config-section .btn {
+  margin-top: 4px;
+}
+.about-text {
+  font-size: 12px;
+  color: #71767b;
+  line-height: 1.4;
+}
+
+/* Scrollable tab content */
+.tab-content {
+  overflow-y: auto;
+  max-height: 430px;
+}

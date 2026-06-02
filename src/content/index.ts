@@ -1,6 +1,7 @@
 import type { PageCapturedMessage, PageGraphqlMessage } from "../shared/messages";
 
 const sentInstagramScripts = new Set<string>();
+const processedLinkedInBprGuids = new Set<string>();
 let lastAnnouncedPageUrl = "";
 let visibleOrderTimer: number | null = null;
 let lastVisibleOrderSignature = "";
@@ -11,6 +12,7 @@ let scanTimerB: number | null = null;
 let urlCheckTimer: number | null = null;
 let extensionContextActive = true;
 let instagramObserver: MutationObserver | null = null;
+let linkedinObserver: MutationObserver | null = null;
 
 function stopAfterInvalidContext() {
   extensionContextActive = false;
@@ -25,6 +27,7 @@ function stopAfterInvalidContext() {
   scanTimerB = null;
   urlCheckTimer = null;
   instagramObserver?.disconnect();
+  linkedinObserver?.disconnect();
   window.removeEventListener("message", handlePageMessage);
 }
 
@@ -60,6 +63,8 @@ function currentProvider() {
   if (location.hostname.includes("instagram.com")) return "instagram";
   if (location.hostname === "x.com" || location.hostname.endsWith(".x.com")) return "x";
   if (location.hostname === "twitter.com") return "x";
+  if (location.hostname === "www.linkedin.com" || location.hostname === "linkedin.com")
+    return "linkedin";
   return null;
 }
 
@@ -614,4 +619,104 @@ if (location.hostname.includes("instagram.com")) {
     scheduleVisibleOrder();
     scheduleVisibleComments();
   });
+}
+
+if (location.hostname === "www.linkedin.com" || location.hostname === "linkedin.com") {
+  if (document.readyState === "loading") {
+    document.addEventListener(
+      "DOMContentLoaded",
+      () => {
+        scanLinkedInBprElements();
+      },
+      { once: true },
+    );
+  } else {
+    scanLinkedInBprElements();
+  }
+
+  linkedinObserver = new MutationObserver((mutations) => {
+    if (!extensionContextActive) return;
+    for (const mutation of mutations) {
+      for (const node of mutation.addedNodes) {
+        if (node.nodeType !== Node.ELEMENT_NODE) continue;
+        const el = node as Element;
+        if (el.tagName === "CODE" && el.id?.startsWith("bpr-guid-")) {
+          processLinkedInBprElement(el as HTMLElement);
+        } else if (el.querySelectorAll) {
+          const nested = el.querySelectorAll<HTMLElement>('code[id^="bpr-guid-"]');
+          for (const code of nested) processLinkedInBprElement(code);
+        }
+      }
+    }
+  });
+  linkedinObserver.observe(document.documentElement, { childList: true, subtree: true });
+}
+
+function unescapeHtml(str: string): string {
+  return str
+    .replace(/&quot;/g, '"')
+    .replace(/&#92;u/g, "\\u")
+    .replace(/&#(\d+);/g, (_: string, c: string) => String.fromCharCode(Number(c)))
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&#39;/g, "'");
+}
+
+function normalizeKeys(obj: unknown): unknown {
+  if (obj === null || obj === undefined || typeof obj !== "object") return obj;
+  if (Array.isArray(obj)) return obj.map(normalizeKeys);
+  const normalized: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    normalized[key.trim()] = normalizeKeys(value);
+  }
+  return normalized;
+}
+
+function processLinkedInBprElement(codeEl: HTMLElement) {
+  const id = codeEl.id;
+  if (!id?.startsWith("bpr-guid-")) return;
+  const guid = id.replace("bpr-guid-", "");
+  if (processedLinkedInBprGuids.has(guid)) return;
+  processedLinkedInBprGuids.add(guid);
+
+  try {
+    const raw = codeEl.textContent || "";
+    if (raw.length < 50) return;
+    const unescaped = unescapeHtml(raw);
+    const parsed = JSON.parse(unescaped);
+    const normalized = normalizeKeys(parsed) as Record<string, unknown>;
+    const innerData =
+      ((normalized?.data as Record<string, unknown>)?.data as Record<string, unknown>) || {};
+
+    const feedKey = Object.keys(innerData).find(
+      (k) =>
+        k.startsWith("feedDashOrganizationalPageUpdates") &&
+        Array.isArray((innerData[k] as Record<string, unknown>)?.["*elements"]),
+    );
+    if (!feedKey) return;
+
+    const elements = (innerData[feedKey] as Record<string, unknown>)?.["*elements"] as
+      | string[]
+      | undefined;
+    if (!elements?.length) return;
+
+    sendRuntimeMessage({
+      action: "CAPTURED_PAYLOAD",
+      provider: "linkedin",
+      endpoint: "feedDashOrganizationalPageUpdates",
+      url: `https://www.linkedin.com/bpr/${feedKey}`,
+      payload: normalized,
+      timestamp: new Date().toISOString(),
+      pageUrl: location.href,
+    });
+  } catch {
+    // BPR parse failure is non-critical
+  }
+}
+
+function scanLinkedInBprElements() {
+  if (!extensionContextActive) return;
+  const codes = document.querySelectorAll<HTMLElement>('code[id^="bpr-guid-"]');
+  for (const el of codes) processLinkedInBprElement(el);
 }

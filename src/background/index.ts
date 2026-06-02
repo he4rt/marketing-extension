@@ -1,66 +1,82 @@
-import type { BackgroundStore } from "../shared/domain";
+import type { BackgroundStore, EndpointStore, SocialProvider } from "../shared/domain";
 import type { RuntimeMessage } from "../shared/messages";
 import { createStore, handleRuntimeMessage } from "./controller";
 
-const CAPTURE_STORE_KEY = "captureStore";
-const TRACKED_HANDLE_KEY = "trackedHandle";
+const LOCAL_KEYS = {
+  endpoints: "he4rt_endpoints",
+  trackedHandles: "he4rt_trackedHandles",
+  archivedEndpoints: "he4rt_archivedEndpoints",
+} as const;
+
+const SESSION_KEY = "he4rt_platforms";
 
 const store = createStore();
 
-function mergeStore(target: BackgroundStore, persisted: Partial<BackgroundStore>) {
-  Object.assign(target, {
-    ...createStore(),
-    ...persisted,
-    activeProvider: persisted.activeProvider || null,
-    archivedEndpoints: persisted.archivedEndpoints || {},
-    endpoints: persisted.endpoints || {},
-    publications: persisted.publications || {},
-    commentsByPublication: persisted.commentsByPublication || {},
-    engagementsByPublication: persisted.engagementsByPublication || {},
-    instagramPublicationIdsByShortcode: persisted.instagramPublicationIdsByShortcode || {},
-    instagramVisiblePublications: persisted.instagramVisiblePublications || [],
-    instagramVisibleComments: persisted.instagramVisibleComments || [],
-    pageSessionKeys: persisted.pageSessionKeys || {},
-    providerPageUrls: persisted.providerPageUrls || {},
-    communityReplies: persisted.communityReplies || {},
-    trackedHandles: persisted.trackedHandles || {},
-    trackedProfiles: persisted.trackedProfiles || {},
-    tweets: persisted.tweets || {},
-    favoriters: persisted.favoriters || {},
-  });
+// ---------------------------------------------------------------------------
+// Hydration: load from both storage areas
+// ---------------------------------------------------------------------------
+
+async function hydrate() {
+  const [local, session] = await Promise.all([
+    chrome.storage.local.get([LOCAL_KEYS.endpoints, LOCAL_KEYS.trackedHandles, LOCAL_KEYS.archivedEndpoints]),
+    chrome.storage.session.get(SESSION_KEY),
+  ]);
+
+  // Restore persistent data
+  if (local[LOCAL_KEYS.endpoints]) store.endpoints = local[LOCAL_KEYS.endpoints] as Record<string, EndpointStore>;
+  if (local[LOCAL_KEYS.trackedHandles]) store.trackedHandles = local[LOCAL_KEYS.trackedHandles] as Partial<Record<SocialProvider, string>>;
+  if (local[LOCAL_KEYS.archivedEndpoints]) store.archivedEndpoints = local[LOCAL_KEYS.archivedEndpoints] as Record<string, EndpointStore>;
+
+  // Restore volatile per-platform processed data (rebuildable from raw)
+  const saved = session[SESSION_KEY];
+  if (saved && typeof saved === "object") {
+    const s = saved as Partial<BackgroundStore["platforms"]>;
+    if (s.x) Object.assign(store.platforms.x, s.x);
+    if (s.instagram) Object.assign(store.platforms.instagram, s.instagram);
+    if (s.linkedin) Object.assign(store.platforms.linkedin, s.linkedin);
+  }
+
+  store.lastUpdated = new Date().toISOString();
 }
 
-const hydration = chrome.storage.local
-  .get([CAPTURE_STORE_KEY, TRACKED_HANDLE_KEY])
-  .then((result) => {
-    if (result[CAPTURE_STORE_KEY] && typeof result[CAPTURE_STORE_KEY] === "object") {
-      mergeStore(store, result[CAPTURE_STORE_KEY] as Partial<BackgroundStore>);
-    }
-    if (typeof result[TRACKED_HANDLE_KEY] === "string") {
-      store.trackedHandle = result[TRACKED_HANDLE_KEY];
-    }
-  });
+const hydration = hydrate();
 
-let persistPromise = Promise.resolve();
+// ---------------------------------------------------------------------------
+// Persistence
+// ---------------------------------------------------------------------------
 
-function persistStore() {
-  const snapshot = JSON.parse(JSON.stringify(store));
-  persistPromise = persistPromise
-    .then(() =>
-      chrome.storage.local.set({
-        [TRACKED_HANDLE_KEY]: store.trackedHandle,
-        [CAPTURE_STORE_KEY]: snapshot,
-      }),
-    )
-    .catch((error) => console.error("[He4rt Analytics] falha ao persistir estado", error));
-  return persistPromise;
+let persistQueue = Promise.resolve();
+
+function persistSession(): Promise<void> {
+  const snapshot = {
+    x: store.platforms.x,
+    instagram: store.platforms.instagram,
+    linkedin: store.platforms.linkedin,
+  };
+  persistQueue = persistQueue
+    .then(() => chrome.storage.session.set({ [SESSION_KEY]: snapshot }))
+    .catch((err) => console.error("[He4rt Analytics] falha ao salvar session", err));
+  return persistQueue;
 }
 
-function shouldPersist(request: RuntimeMessage) {
+function persistLocal(): Promise<void> {
+  const data: Record<string, unknown> = {
+    [LOCAL_KEYS.endpoints]: store.endpoints,
+    [LOCAL_KEYS.trackedHandles]: store.trackedHandles,
+    [LOCAL_KEYS.archivedEndpoints]: store.archivedEndpoints,
+  };
+  persistQueue = persistQueue
+    .then(() => chrome.storage.local.set(data))
+    .catch((err) => console.error("[He4rt Analytics] falha ao salvar local", err));
+  return persistQueue;
+}
+
+function shouldPersistSession(request: RuntimeMessage) {
   return (
     request.action === "CAPTURED_PAYLOAD" ||
     request.action === "GRAPHQL_CAPTURED" ||
     request.action === "SET_HANDLE" ||
+    request.action === "SET_HANDLES" ||
     request.action === "SET_ACTIVE_PROVIDER" ||
     request.action === "CLEAR_ALL" ||
     request.action === "PAGE_SESSION_STARTED" ||
@@ -69,42 +85,48 @@ function shouldPersist(request: RuntimeMessage) {
   );
 }
 
+function shouldPersistLocal(request: RuntimeMessage) {
+  return (
+    request.action === "CAPTURED_PAYLOAD" ||
+    request.action === "GRAPHQL_CAPTURED" ||
+    request.action === "SET_HANDLE" ||
+    request.action === "SET_HANDLES" ||
+    request.action === "CLEAR_ALL"
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Notify popup
+// ---------------------------------------------------------------------------
+
 function notifyStoreUpdated() {
   chrome.runtime
-    .sendMessage({
-      action: "STORE_UPDATED",
-      publicationCount: Object.keys(store.publications).length,
-      lastUpdated: store.lastUpdated,
-    })
-    .catch(() => {
-      // Normal when the popup is closed.
-    });
+    .sendMessage({ action: "STORE_UPDATED" })
+    .catch(() => {});
 }
+
+// ---------------------------------------------------------------------------
+// Message listener
+// ---------------------------------------------------------------------------
 
 chrome.runtime.onMessage.addListener((request: RuntimeMessage, _sender, sendResponse) => {
   hydration
     .then(() => {
       const response = handleRuntimeMessage(store, request, {
         log: console.log,
-        persistHandle: (handle) => chrome.storage.local.set({ [TRACKED_HANDLE_KEY]: handle }),
+        persistHandle: (handle) => chrome.storage.local.set({ trackedHandle: handle }),
       });
-      const persisted = shouldPersist(request) ? persistStore() : Promise.resolve();
-      persisted.then(() => {
-        if (
-          request.action === "CAPTURED_PAYLOAD" ||
-          request.action === "GRAPHQL_CAPTURED" ||
-          request.action === "SET_ACTIVE_PROVIDER" ||
-          request.action === "PAGE_SESSION_STARTED" ||
-          request.action === "VISIBLE_PUBLICATIONS" ||
-          request.action === "VISIBLE_COMMENTS"
-        ) {
-          notifyStoreUpdated();
-        }
+
+      const sessionPersist = shouldPersistSession(request) ? persistSession() : Promise.resolve();
+      const localPersist = shouldPersistLocal(request) ? persistLocal() : Promise.resolve();
+
+      Promise.all([sessionPersist, localPersist]).then(() => {
+        if (shouldPersistSession(request)) notifyStoreUpdated();
         sendResponse(response);
       });
     })
     .catch((error) => {
-      console.error("[He4rt Analytics] falha ao hidratar estado", error);
+      console.error("[He4rt Analytics] falha ao processar mensagem", error);
       sendResponse({ error: String(error) });
     });
   return true;

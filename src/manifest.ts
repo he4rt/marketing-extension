@@ -4,20 +4,35 @@ const manifest = {
   version: "1.0.0",
   description: "Captura engajamento social da comunidade He4rt Developers",
   permissions: ["storage", "tabs", "unlimitedStorage"],
-  host_permissions: ["https://x.com/*", "https://twitter.com/*", "https://www.instagram.com/*"],
+  host_permissions: [
+    "https://x.com/*",
+    "https://twitter.com/*",
+    "https://www.instagram.com/*",
+    "https://www.linkedin.com/*",
+  ],
   background: {
     service_worker: "background.js",
     type: "module",
   },
   content_scripts: [
     {
-      matches: ["https://x.com/*", "https://twitter.com/*", "https://www.instagram.com/*"],
+      matches: [
+        "https://x.com/*",
+        "https://twitter.com/*",
+        "https://www.instagram.com/*",
+        "https://www.linkedin.com/*",
+      ],
       js: ["interceptor.js"],
       run_at: "document_start",
       world: "MAIN",
     },
     {
-      matches: ["https://x.com/*", "https://twitter.com/*", "https://www.instagram.com/*"],
+      matches: [
+        "https://x.com/*",
+        "https://twitter.com/*",
+        "https://www.instagram.com/*",
+        "https://www.linkedin.com/*",
+      ],
       js: ["content.js"],
       run_at: "document_start",
       world: "ISOLATED",

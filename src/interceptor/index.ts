@@ -2,6 +2,15 @@ import type { SocialProvider } from "../shared/domain";
 import type { PageCapturedMessage } from "../shared/messages";
 
 const X_GRAPHQL_PATH = "/i/api/graphql/";
+const LINKEDIN_VOYAGER_PATH = "/voyager/api/graphql";
+
+const LINKEDIN_ENDPOINT_MAP: Record<string, string> = {
+  voyagerFeedDashOrganizationalPageUpdates: "feedDashOrganizationalPageUpdates",
+  voyagerSocialDashReactions: "socialDashReactions",
+  voyagerFeedDashReshareFeed: "feedDashReshareFeed",
+  voyagerSocialDashComments: "socialDashComments",
+};
+
 const INSTAGRAM_MARKERS = [
   "xdt_api__v1__feed__timeline__connection",
   "xdt_api__v1__media__media_id__comments__connection",
@@ -16,6 +25,7 @@ function providerFromUrl(url: string): null | SocialProvider {
     const host = new URL(url, window.location.href).hostname;
     if (host === "x.com" || host.endsWith(".x.com") || host === "twitter.com") return "x";
     if (host === "www.instagram.com" || host === "instagram.com") return "instagram";
+    if (host === "www.linkedin.com" || host === "linkedin.com") return "linkedin";
   } catch {}
   return null;
 }
@@ -27,6 +37,20 @@ function extractXEndpointName(url: string) {
   const parts = after.split("/");
   if (parts.length < 2) return null;
   return parts[1]?.split("?")[0] || null;
+}
+
+function extractLinkedInEndpointName(url: string) {
+  const idx = url.indexOf(LINKEDIN_VOYAGER_PATH);
+  if (idx === -1) return null;
+  try {
+    const parsed = new URL(url, window.location.href);
+    const queryId = parsed.searchParams.get("queryId");
+    if (!queryId) return null;
+    const prefix = queryId.split(".")[0] || "";
+    return LINKEDIN_ENDPOINT_MAP[prefix] || prefix;
+  } catch {
+    return null;
+  }
 }
 
 function extractInstagramEndpointName(url: string, body?: BodyInit | null) {
@@ -113,6 +137,10 @@ async function inspectResponse(
   try {
     const clone = response.clone();
     const data = await clone.json();
+    if (provider === "linkedin") {
+      if (endpoint) postPayload(provider, endpoint, url, data);
+      return;
+    }
     if (provider === "instagram") {
       if (!shouldPostInstagramPayload(endpoint, data)) return;
       postPayload(
@@ -140,7 +168,11 @@ window.fetch = function patchedFetch(this: typeof window, ...args: Parameters<ty
 
   if (provider) {
     const endpoint =
-      provider === "x" ? extractXEndpointName(url) : extractInstagramEndpointName(url, init?.body);
+      provider === "x"
+        ? extractXEndpointName(url)
+        : provider === "linkedin"
+          ? extractLinkedInEndpointName(url)
+          : extractInstagramEndpointName(url, init?.body);
     if (endpoint || provider === "instagram") {
       return originalFetch.apply(this, args).then(async (response) => {
         await inspectResponse(provider, endpoint, url, response);
@@ -169,39 +201,75 @@ XMLHttpRequest.prototype.open = function patchedOpen(
   username?: null | string,
   password?: null | string,
 ) {
-  const urlString = String(url);
-  const provider = providerFromUrl(urlString);
-  this._he4rtUrl = urlString;
+  const absoluteUrl = resolveUrl(url);
+  const provider = providerFromUrl(absoluteUrl);
+  this._he4rtUrl = absoluteUrl;
   this._he4rtProvider = provider;
   this._he4rtEndpoint =
     provider === "x"
-      ? extractXEndpointName(urlString)
-      : provider === "instagram"
-        ? extractInstagramEndpointName(urlString)
-        : null;
+      ? extractXEndpointName(absoluteUrl)
+      : provider === "linkedin"
+        ? extractLinkedInEndpointName(absoluteUrl)
+        : provider === "instagram"
+          ? extractInstagramEndpointName(absoluteUrl)
+          : null;
   return originalXHROpen.call(this, method, url, async, username ?? null, password ?? null);
 };
 
+function resolveUrl(raw: string | URL): string {
+  if (typeof raw === "string") {
+    try {
+      return new URL(raw, window.location.origin).href;
+    } catch {
+      return raw;
+    }
+  }
+  return raw.href;
+}
+
 XMLHttpRequest.prototype.send = function patchedSend(this: CapturedXMLHttpRequest, ...args) {
-  if (this._he4rtProvider && (this._he4rtEndpoint || this._he4rtProvider === "instagram")) {
-    this.addEventListener("load", function onLoad() {
+  if (this._he4rtProvider && (this._he4rtEndpoint || this._he4rtProvider === "instagram" || this._he4rtProvider === "linkedin")) {
+    const provider = this._he4rtProvider;
+    const url = this._he4rtUrl || "";
+    const capturedResponseType = this.responseType;
+
+    this.addEventListener("load", async function onLoad() {
       try {
         const xhr = this as CapturedXMLHttpRequest;
-        const data = JSON.parse(xhr.responseText);
-        if (xhr._he4rtProvider === "instagram") {
+        let raw: string;
+
+        if (!capturedResponseType || capturedResponseType === "text") {
+          raw = xhr.responseText;
+        } else if (capturedResponseType === "json") {
+          raw = JSON.stringify(xhr.response);
+        } else if (xhr.response instanceof Blob) {
+          raw = await (xhr.response as Blob).text();
+        } else {
+          raw = String(xhr.response);
+        }
+
+        const data = JSON.parse(raw);
+
+        if (provider === "instagram") {
           if (!shouldPostInstagramPayload(xhr._he4rtEndpoint || null, data)) return;
           postPayload(
             "instagram",
             inferInstagramEndpointFromPayload(data, xhr._he4rtEndpoint || "InstagramPayload"),
-            xhr._he4rtUrl || "",
+            url,
             data,
           );
           return;
         }
-        if (xhr._he4rtProvider === "x" && xhr._he4rtEndpoint) {
-          postPayload("x", xhr._he4rtEndpoint, xhr._he4rtUrl || "", data);
+        if (provider === "linkedin" && xhr._he4rtEndpoint) {
+          postPayload("linkedin", xhr._he4rtEndpoint, url, data);
+          return;
         }
-      } catch {}
+        if (provider === "x" && xhr._he4rtEndpoint) {
+          postPayload("x", xhr._he4rtEndpoint, url, data);
+        }
+      } catch (e) {
+        console.debug("[Interceptor] XHR parse error:", url, capturedResponseType, (e as Error).message);
+      }
     });
   }
   return originalXHRSend.apply(this, args);

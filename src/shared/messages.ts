@@ -1,4 +1,12 @@
-import type { SocialProvider } from "./domain";
+import type {
+  EndpointStore,
+  SocialProvider,
+  SocialPublication,
+} from "./domain";
+import type {
+  ExportV3PerPlatform,
+  NormalizedStore,
+} from "./domain";
 
 export type CapturedPayloadMessage = {
   action: "CAPTURED_PAYLOAD";
@@ -77,16 +85,9 @@ export type SetActiveProviderMessage = {
 export type VisiblePublicationsMessage = {
   action: "VISIBLE_PUBLICATIONS";
   items?: Array<{
-    author?: {
-      avatar_url?: string;
-      name?: string;
-      username?: string;
-    };
+    author?: { avatar_url?: string; name?: string; username?: string };
     mediaType?: "carousel" | "image" | "reel" | "unknown" | "video";
-    metrics?: {
-      comment_count?: number;
-      like_count?: number;
-    };
+    metrics?: { comment_count?: number; like_count?: number };
     shortcode: string;
     text?: string;
     url: string;
@@ -100,12 +101,7 @@ export type VisibleCommentsMessage = {
   action: "VISIBLE_COMMENTS";
   captured_at: string;
   comments: Array<{
-    author: {
-      avatar_url?: string;
-      name?: string;
-      provider_user_id?: string;
-      username: string;
-    };
+    author: { avatar_url?: string; name?: string; provider_user_id?: string; username: string };
     comment_id: string;
     like_count?: number;
     parent_comment_id?: null | string;
@@ -117,6 +113,50 @@ export type VisibleCommentsMessage = {
   pageUrl: string;
   provider: Extract<SocialProvider, "instagram">;
   publication_shortcode: string;
+};
+
+// --- New messages for multi-platform popup ---
+
+export type GetPlatformDataMessage = {
+  action: "GET_PLATFORM_DATA";
+  provider: SocialProvider;
+};
+
+export type PlatformDataResponse = {
+  type: "x" | "instagram" | "linkedin";
+} & NormalizedStore;
+
+export type GetAllSummaryMessage = {
+  action: "GET_ALL_SUMMARY";
+};
+
+export type AllSummaryResponse = {
+  total_content: number;
+  total_engagers: number;
+  by_platform: Record<string, { content_count: number; engager_count: number }>;
+  lastUpdated: string | null;
+};
+
+export type SetHandlesMessage = {
+  action: "SET_HANDLES";
+  handles: Partial<Record<SocialProvider, string>>;
+};
+
+export type GetHandlesMessage = {
+  action: "GET_HANDLES";
+};
+
+export type HandlesResponse = {
+  handles: Partial<Record<SocialProvider, string>>;
+};
+
+export type GetRawPayloadsMessage = {
+  action: "GET_RAW_PAYLOADS";
+  provider?: SocialProvider;
+};
+
+export type RawPayloadsResponse = {
+  endpoints: Record<string, EndpointStore>;
 };
 
 export type RuntimeMessage =
@@ -134,7 +174,12 @@ export type RuntimeMessage =
   | PageSessionStartedMessage
   | SetActiveProviderMessage
   | VisiblePublicationsMessage
-  | VisibleCommentsMessage;
+  | VisibleCommentsMessage
+  | GetPlatformDataMessage
+  | GetAllSummaryMessage
+  | SetHandlesMessage
+  | GetHandlesMessage
+  | GetRawPayloadsMessage;
 
 export type PageCapturedMessage = {
   endpoint: string;

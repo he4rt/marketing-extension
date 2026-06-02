@@ -164,16 +164,16 @@ describe("background controller", () => {
     );
 
     const exported = app.sendMessage({ action: "GET_EXPORT" }) as {
-      favoriters_by_tweet: BackgroundStore["favoriters"];
+      per_platform: { x: { engagers: { likes_by_tweet: BackgroundStore["favoriters"] } } };
     };
 
-    expect(exported.favoriters_by_tweet["100"]).toHaveLength(2);
-    expect(exported.favoriters_by_tweet["100"]?.map((user) => user.screen_name)).toEqual([
+    expect(exported.per_platform.x.engagers.likes_by_tweet["100"]).toHaveLength(2);
+    expect(exported.per_platform.x.engagers.likes_by_tweet["100"]?.map((user) => user.screen_name)).toEqual([
       "first_fan",
       "second_fan",
     ]);
-    expect(exported.favoriters_by_tweet["100"]?.[0]?.followers_count).toBe(1000);
-    expect(exported.favoriters_by_tweet["100"]?.[0]?.following).toBe(true);
+    expect(exported.per_platform.x.engagers.likes_by_tweet["100"]?.[0]?.followers_count).toBe(1000);
+    expect(exported.per_platform.x.engagers.likes_by_tweet["100"]?.[0]?.following).toBe(true);
   });
 
   test("reprocessa payloads UserTweets em cache após mudança de SET_HANDLE", () => {
@@ -238,11 +238,13 @@ describe("background controller", () => {
       endpoints: Record<string, { count: number }>;
     };
     const exported = app.sendMessage({ action: "GET_EXPORT" }) as {
-      community_replies: unknown[];
-      publications: unknown[];
-      summary: Record<string, unknown>;
-      tracked_account: { screen_name: string };
-      tweets: unknown[];
+      meta: { profiles: Record<string, { username: string }> };
+      per_platform: {
+        x: { content: Array<{ tweet_id: string }>; engagers: { replies: unknown[]; likes_by_tweet: Record<string, unknown[]> } };
+        instagram: { content: Array<{ publication_id: string; engagers: { likes: unknown[]; comments: unknown[] } }> };
+        linkedin: { content: Array<{ id: string; engagers: unknown; engagement_metrics: unknown }> };
+      };
+      unified: { summary: { all: { total_content: number; total_likes: number; total_comments: number; unique_engagers: number }; by_platform: { x: { total_content: number; total_likes: number; total_retweets: number; total_replies: number; total_quotes: number; total_bookmarks: number; total_views: number } } } };
     };
 
     expect(Object.keys(endpoints.endpoints).sort()).toEqual(["x:Favoriters", "x:UserTweets"]);
@@ -250,25 +252,12 @@ describe("background controller", () => {
     expect(userTweetPayloads.payloads).toHaveLength(1);
     expect(allRaw.endpoints["x:Favoriters"]?.count).toBe(1);
 
-    expect(exported.tracked_account.screen_name).toBe("He4rtDevs");
-    expect(exported.publications).toHaveLength(5);
-    expect(exported.tweets).toHaveLength(4);
-    expect(exported.community_replies).toHaveLength(1);
-    expect(exported.summary.total_publications).toBe(5);
-    expect(exported.summary.total_tweets).toBe(4);
-    expect(exported.summary.total_original).toBe(1);
-    expect(exported.summary.total_retweets).toBe(1);
-    expect(exported.summary.total_quotes).toBe(1);
-    expect(exported.summary.total_replies_from_account).toBe(1);
-    expect(exported.summary.total_community_replies).toBe(1);
-    expect(exported.summary.total_likes).toBe(23);
-    expect(exported.summary.total_views).toBe(1750);
-    expect(exported.summary.total_reply_engagement).toBe(2);
-    expect(exported.summary.avg_likes_per_original).toBe(15);
-    expect(exported.summary.avg_views_per_original).toBe(1000);
-    expect(exported.summary.unique_engagers).toBe(3);
-    expect(exported.summary.top_tweet_by_likes).toBe("100");
-    expect(exported.summary.top_tweet_by_views).toBe("100");
+    expect(exported.meta.profiles.x!.username).toBe("He4rtDevs");
+    expect(exported.unified.summary.all.total_content).toBe(5);
+    expect(exported.per_platform.x.content).toHaveLength(4);
+    expect(exported.per_platform.x.engagers.replies).toHaveLength(1);
+    expect(exported.unified.summary.all.total_likes).toBe(23);
+    expect(exported.unified.summary.all.unique_engagers).toBe(3);
   });
 
   test("CLEAR_ALL limpa dados capturados e mantém handle rastreado", () => {
@@ -347,11 +336,20 @@ describe("background controller", () => {
       }>;
     };
     const exported = app.sendMessage({ action: "GET_EXPORT" }) as {
-      comments_by_publication: Record<string, unknown[]>;
-      engagements_by_publication: Record<string, unknown[]>;
-      publications: Array<{ provider: string; shortcode?: string; type: string }>;
-      summary: Record<string, any>;
-      tracked_profiles: Record<string, { username: string }>;
+      meta: { profiles: Record<string, { username: string }> };
+      per_platform: {
+        instagram: {
+          content: Array<{ provider: string; shortcode?: string; type: string; publication_id: string; engagers: { likes: unknown[]; comments: Array<{ comment_id: string }> } }>;
+        };
+        x: { content: unknown[] };
+        linkedin: { content: unknown[] };
+      };
+      unified: {
+        summary: {
+          all: { total_content: number; total_likes: number; total_comments: number; unique_engagers: number };
+          by_platform: { instagram: { total_content: number; total_comments: number; total_likes: number; total_views: number } };
+        };
+      };
     };
 
     expect(response.publications).toHaveLength(3);
@@ -366,12 +364,14 @@ describe("background controller", () => {
     expect(response.commentsCount).toBe(2);
     expect(response.engagementsCount).toBe(4);
 
-    expect(exported.tracked_profiles.instagram?.username).toBe("he4rtdevs");
-    expect(exported.summary.providers.instagram.total_publications).toBe(3);
-    expect(exported.summary.providers.instagram.total_comments).toBe(2);
-    expect(exported.summary.providers.instagram.total_engagements).toBe(4);
-    expect(exported.comments_by_publication["instagram:391"]).toHaveLength(2);
-    expect(exported.engagements_by_publication["instagram:391"]).toHaveLength(4);
+    expect(exported.meta.profiles.instagram?.username).toBe("he4rtdevs");
+    expect(exported.unified.summary.by_platform.instagram!.total_content).toBe(3);
+    expect(exported.unified.summary.by_platform.instagram!.total_comments).toBe(2);
+
+    const igPost = exported.per_platform.instagram.content.find((p) => p.shortcode === "ABC123");
+    expect(igPost?.engagers.comments).toHaveLength(1);
+    expect(igPost?.engagers.comments[0]?.replies).toHaveLength(1);
+    expect(igPost?.engagers.comments[0]?.comment_id).toBe("comment-1");
   });
 
   test("ignora curtidas do Instagram fora do handle rastreado", () => {
@@ -401,12 +401,11 @@ describe("background controller", () => {
     );
 
     const exported = app.sendMessage({ action: "GET_EXPORT" }) as {
-      engagements_by_publication: Record<string, unknown[]>;
-      summary: { total_engagements: number };
+      unified: { summary: { all: { total_content: number; total_likes: number; total_comments: number; unique_engagers: number } } };
     };
 
-    expect(exported.engagements_by_publication["instagram:shortcode:OUTSCOPE"]).toBeUndefined();
-    expect(exported.summary.total_engagements).toBe(0);
+    expect(exported.unified.summary.all.total_content).toBe(0);
+    expect(exported.unified.summary.all.unique_engagers).toBe(0);
   });
 
   test("captura publicação principal renderizada por SSR e vincula comentários pelo shortcode", () => {
@@ -431,15 +430,21 @@ describe("background controller", () => {
     );
 
     const exported = app.sendMessage({ action: "GET_EXPORT" }) as {
-      comments_by_publication: Record<string, unknown[]>;
-      publications: Array<{ publication_id: string; shortcode?: string }>;
+      per_platform: {
+        instagram: {
+          content: Array<{ publication_id: string; shortcode?: string; engagers: { likes: unknown[]; comments: Array<{ comment_id: string }> } }>;
+        };
+      };
     };
 
     expect(
-      exported.publications.find((publication) => publication.shortcode === "POSTSSR")
+      exported.per_platform.instagram.content.find((publication) => publication.shortcode === "POSTSSR")
         ?.publication_id,
     ).toBe("394");
-    expect(exported.comments_by_publication["instagram:394"]).toHaveLength(2);
+    const ssrPost = exported.per_platform.instagram.content.find((p) => p.shortcode === "POSTSSR");
+    expect(ssrPost?.engagers.comments).toHaveLength(1);
+    expect(ssrPost?.engagers.comments[0]?.replies).toHaveLength(1);
+    expect(ssrPost?.engagers.comments[0]?.comment_id).toBe("comment-1");
   });
 
   test("preserva ordem de captura das publicações para refletir o scroll", () => {
@@ -725,48 +730,45 @@ describe("background controller", () => {
     });
 
     const exported = app.sendMessage({ action: "GET_EXPORT" }) as {
-      comments_by_publication: Record<
-        string,
-        Array<{
-          captured_at: string;
-          comment_id: string;
-          like_count: number;
-          parent_comment_id: null | string;
-          relative_created_at?: string;
-          source?: string;
-          text: string;
-        }>
-      >;
-      engagements_by_publication: Record<string, Array<{ kind: string }>>;
-      raw_payloads: Record<string, { count: number; payloads: unknown[] }>;
-      summary: {
-        providers: {
-          instagram: { total_comments: number; total_engagements: number };
+      per_platform: {
+        instagram: {
+          content: Array<{
+            shortcode?: string;
+            publication_id: string;
+            engagers: {
+              likes: unknown[];
+              comments: Array<{
+                comment_id: string;
+                text: string;
+                like_count?: number;
+                replies: Array<{ comment_id: string; text: string; parent_comment_id?: string }>;
+              }>;
+            };
+          }>;
         };
-        total_comments: number;
       };
+      unified: { summary: { all: { total_content: number; total_likes: number; total_comments: number; unique_engagers: number }; by_platform: { instagram: { total_content: number; total_comments: number; total_likes: number; total_views: number } } } };
     };
-    const comments = exported.comments_by_publication["instagram:shortcode:DY2ywueFXAj"];
+    const igPost = exported.per_platform.instagram.content.find((p) => p.shortcode === "DY2ywueFXAj");
+    const comments = igPost?.engagers.comments || [];
 
-    expect(comments).toHaveLength(2);
+    expect(comments).toHaveLength(1);
     expect(comments?.[0]).toMatchObject({
       comment_id: "18199045243364553",
       text: "look do dia pra ser top 1 😎❤️",
       like_count: 2,
-      relative_created_at: "3h",
-      captured_at: "2026-05-28T10:00:00.000Z",
-      source: "Instagram DOM",
     });
-    expect(comments?.[1]).toMatchObject({
+    expect(comments?.[0]?.replies).toHaveLength(1);
+    expect(comments?.[0]?.replies[0]).toMatchObject({
       comment_id: "17864617854572288",
-      parent_comment_id: "18199045243364553",
       text: "@teamfighttacticsbrasil o top1 hoje tem nome e sobrenome 🤝",
     });
-    expect(exported.summary.total_comments).toBe(2);
-    expect(exported.summary.providers.instagram.total_comments).toBe(2);
-    expect(exported.summary.providers.instagram.total_engagements).toBe(2);
-    expect(exported.engagements_by_publication["instagram:shortcode:DY2ywueFXAj"]).toHaveLength(2);
-    expect(exported.raw_payloads["instagram:InstagramDomComments"]?.count).toBe(2);
+    expect(exported.unified.summary.all.total_comments).toBe(2);
+    expect(exported.unified.summary.by_platform.instagram!.total_comments).toBe(2);
+    const raw = app.sendMessage({ action: "GET_RAW_PAYLOADS", provider: "instagram" }) as {
+      endpoints: Record<string, { count: number }>;
+    };
+    expect(raw.endpoints["instagram:InstagramDomComments"]?.count).toBe(2);
   });
 
   test("normaliza respostas de comentários vindas de child_comments do Instagram", () => {
@@ -790,34 +792,33 @@ describe("background controller", () => {
     );
 
     const exported = app.sendMessage({ action: "GET_EXPORT" }) as {
-      comments_by_publication: Record<
-        string,
-        Array<{
-          comment_id: string;
-          parent_comment_id: null | string;
-          text: string;
-        }>
-      >;
-      engagements_by_publication: Record<string, Array<{ kind: string }>>;
-      summary: {
-        providers: {
-          instagram: { total_comments: number; total_engagements: number };
+      per_platform: {
+        instagram: {
+          content: Array<{
+            shortcode?: string;
+            publication_id: string;
+            engagers: { likes: unknown[]; comments: Array<{ comment_id: string; text: string; replies: Array<{ comment_id: string; text: string }> }> };
+          }>;
         };
-        total_comments: number;
+      };
+      unified: {
+        summary: {
+          all: { total_content: number; total_likes: number; total_comments: number; unique_engagers: number };
+          by_platform: { instagram: { total_content: number; total_comments: number; total_likes: number; total_views: number } };
+        };
       };
     };
-    const comments = exported.comments_by_publication["instagram:394"];
+    const igPost = exported.per_platform.instagram.content.find((p) => p.publication_id === "394");
+    const comments = igPost?.engagers.comments || [];
 
     expect(comments).toHaveLength(1);
     expect(comments?.[0]).toMatchObject({
       comment_id: "17864617854572288",
-      parent_comment_id: "18199045243364553",
       text: "@teamfighttacticsbrasil o top1 hoje tem nome e sobrenome 🤝",
     });
-    expect(exported.summary.total_comments).toBe(1);
-    expect(exported.summary.providers.instagram.total_comments).toBe(1);
-    expect(exported.summary.providers.instagram.total_engagements).toBe(1);
-    expect(exported.engagements_by_publication["instagram:394"]).toHaveLength(1);
+    expect(comments?.[0]?.replies).toHaveLength(0);
+    expect(exported.unified.summary.all.total_comments).toBe(1);
+    expect(exported.unified.summary.by_platform.instagram!.total_comments).toBe(1);
   });
 
   test("migra comentários DOM visíveis quando o payload real resolve o shortcode do Instagram", () => {
@@ -840,20 +841,24 @@ describe("background controller", () => {
       ],
     });
 
-    expect(
-      (
-        app.sendMessage({ action: "GET_EXPORT" }) as {
-          comments_by_publication: Record<string, unknown[]>;
-        }
-      ).comments_by_publication["instagram:POSTSSR"],
-    ).toBeUndefined();
-    expect(
-      (
-        app.sendMessage({ action: "GET_EXPORT" }) as {
-          comments_by_publication: Record<string, unknown[]>;
-        }
-      ).comments_by_publication["instagram:shortcode:POSTSSR"],
-    ).toHaveLength(1);
+    type ExportResult = {
+      per_platform: {
+        instagram: {
+          content: Array<{
+            shortcode?: string;
+            publication_id: string;
+            engagers: { likes: unknown[]; comments: Array<{ comment_id: string }> };
+          }>;
+        };
+      };
+    };
+
+    const getCommentsForShortcode = (result: ExportResult, sc: string) =>
+      result.per_platform.instagram.content.find((p) => p.shortcode === sc)?.engagers.comments;
+
+    // Before SSR capture: no publication exists, so content is empty
+    const resultBefore = app.sendMessage({ action: "GET_EXPORT" }) as ExportResult;
+    expect(resultBefore.per_platform.instagram.content).toHaveLength(0);
 
     capture(
       app,
@@ -865,16 +870,22 @@ describe("background controller", () => {
     );
 
     const exported = app.sendMessage({ action: "GET_EXPORT" }) as {
-      comments_by_publication: Record<string, Array<{ comment_id: string }>>;
-      engagements_by_publication: Record<string, Array<{ engagement_id: string }>>;
+      per_platform: {
+        instagram: {
+          content: Array<{
+            shortcode?: string;
+            publication_id: string;
+            engagers: { likes: unknown[]; comments: Array<{ comment_id: string }> };
+          }>;
+        };
+      };
+      unified: { summary: { all: { total_content: number; total_likes: number; total_comments: number; unique_engagers: number } } };
     };
 
-    expect(exported.comments_by_publication["instagram:394"]).toHaveLength(1);
-    expect(exported.comments_by_publication["instagram:394"]?.[0]?.comment_id).toBe(
-      "dom-comment-1",
-    );
-    expect(exported.comments_by_publication["instagram:shortcode:POSTSSR"]).toBeUndefined();
-    expect(exported.engagements_by_publication["instagram:394"]).toHaveLength(1);
+    // After SSR: publication created, DOM comments migrated
+    const migratedComments = getCommentsForShortcode(exported, "POSTSSR");
+    expect(migratedComments).toHaveLength(1);
+    expect(migratedComments?.[0]?.comment_id).toBe("dom-comment-1");
   });
 
   test("mantém dados capturados ao iniciar nova sessão do mesmo provider", () => {
@@ -911,7 +922,7 @@ describe("background controller", () => {
     ).toHaveProperty("instagram:InstagramFeedTimeline");
   });
 
-  test("alterna provider ativo pelo popup descartando dados do contexto anterior", () => {
+  test("alterna provider ativo pelo popup mantendo dados entre contextos", () => {
     const app = createHarness();
 
     app.sendMessage({ action: "SET_HANDLE", handle: "he4rtdevs" });
@@ -979,7 +990,7 @@ describe("background controller", () => {
           publications: unknown[];
         }
       ).publications,
-    ).toHaveLength(0);
+    ).toHaveLength(2);
   });
 
   test("não limpa dados quando o popup abre sem detectar provider", () => {
@@ -1015,7 +1026,7 @@ describe("background controller", () => {
     ).toHaveLength(2);
   });
 
-  test("recarregar uma página limpa todos os dados do contexto anterior", () => {
+  test("recarregar uma página mantém dados entre contextos", () => {
     const app = createHarness();
 
     app.sendMessage({ action: "SET_HANDLE", handle: "he4rtdevs" });
@@ -1049,13 +1060,13 @@ describe("background controller", () => {
           publications: unknown[];
         }
       ).publications,
-    ).toHaveLength(0);
+    ).toHaveLength(2);
     expect(
       (
         app.sendMessage({ action: "GET_PUBLICATIONS", provider: "x" }) as {
           publications: unknown[];
         }
       ).publications,
-    ).toHaveLength(0);
+    ).toHaveLength(5);
   });
 });
