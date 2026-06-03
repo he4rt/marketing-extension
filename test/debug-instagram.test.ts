@@ -14,7 +14,7 @@ describe("debug instagram comments", () => {
         JSON.stringify(
           handleRuntimeMessage(store, req, {
             log: (m: string) => console.log("[log]", m),
-            persistHandle: (h: string) => {},
+            persistHandle: () => {},
           }),
         ),
       );

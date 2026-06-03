@@ -32,14 +32,10 @@ import type {
 import type { BackgroundProviderFacet } from "../providers/contract";
 import { recordRawPayload, storePublication } from "./store";
 
-type AnyRecord = Record<string, any>;
-
 export type MessageContext = {
   log?: (message: string) => void;
   persistHandle?: (handle: string) => void;
 };
-
-const ALL_PROVIDERS: SocialProvider[] = ["instagram", "linkedin", "x"];
 
 function emptyXStore(): XStore {
   return {
@@ -228,7 +224,6 @@ function reprocessPayloads(store: BackgroundStore) {
   const providerPageUrls = { ...store.providerPageUrls };
   const pageSessionKeys = { ...store.pageSessionKeys };
   const trackedHandles = { ...store.trackedHandles };
-  const archivedEndpoints = { ...store.archivedEndpoints };
   const cachedEndpoints = { ...store.archivedEndpoints, ...store.endpoints };
   const payloads = Object.values(cachedEndpoints).flatMap((endpoint) =>
     endpoint.payloads.map((payload) => ({

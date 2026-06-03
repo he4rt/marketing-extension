@@ -209,7 +209,6 @@ export function processInstagramCapture(store: BackgroundStore, request: Capture
 
   if (request.endpoint.includes("Liker") || request.endpoint.includes("LikedBy")) {
     if (pageShortcode && !instagramPublicationAllowedForComments(store, pageShortcode)) return;
-    const relationPublicationId = resolveInstagramPublicationId(store, pageShortcode);
     for (const engagement of extractInstagramLikers(request.payload, request.pageUrl)) {
       engagement.publication_id = resolveInstagramPublicationId(store, engagement.publication_id);
       engagement.engagement_id = publicationKey(

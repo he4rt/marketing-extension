@@ -341,7 +341,7 @@ describe("background controller", () => {
       meta: { profiles: Record<string, { username: string }> };
       per_platform: {
         instagram: {
-          content: Array<{ provider: string; shortcode?: string; type: string; publication_id: string; engagers: { likes: unknown[]; comments: Array<{ comment_id: string }> } }>;
+          content: Array<{ provider: string; shortcode?: string; type: string; publication_id: string; engagers: { likes: unknown[]; comments: Array<{ comment_id: string; replies: unknown[] }> } }>;
         };
         x: { content: unknown[] };
         linkedin: { content: unknown[] };
@@ -434,7 +434,7 @@ describe("background controller", () => {
     const exported = app.sendMessage({ action: "GET_EXPORT" }) as {
       per_platform: {
         instagram: {
-          content: Array<{ publication_id: string; shortcode?: string; engagers: { likes: unknown[]; comments: Array<{ comment_id: string }> } }>;
+          content: Array<{ publication_id: string; shortcode?: string; engagers: { likes: unknown[]; comments: Array<{ comment_id: string; replies: unknown[] }> } }>;
         };
       };
     };

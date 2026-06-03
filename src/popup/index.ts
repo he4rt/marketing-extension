@@ -1,7 +1,7 @@
 import type {
   EndpointStore,
   ExportJSON,
-  LinkedInPostData,
+  ExportLinkedInPost,
   SocialComment,
   SocialEngagement,
   SocialProvider,
@@ -18,7 +18,7 @@ type ProviderData = {
 
 type LinkedInProviderData = {
   type: "linkedin";
-  content: LinkedInPostData[];
+  content: ExportLinkedInPost[];
   lastUpdated: string | null;
 };
 
@@ -64,9 +64,13 @@ const HOST_TAB_MAP: Array<{ host: string; tab: string }> = PROVIDER_METAS.flatMa
 );
 
 function switchTab(tabId: string) {
-  document.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
+  document.querySelectorAll(".tab").forEach((t) => {
+    t.classList.remove("active");
+  });
   document.querySelector(`.tab[data-tab="${tabId}"]`)?.classList.add("active");
-  document.querySelectorAll(".tab-content").forEach((c) => c.classList.add("hidden"));
+  document.querySelectorAll(".tab-content").forEach((c) => {
+    c.classList.add("hidden");
+  });
   document.getElementById(`tab-${tabId}`)?.classList.remove("hidden");
 
   if (tabId === "all") loadAllSummary();
