@@ -98,6 +98,7 @@ export function createStore(trackedHandle = ""): BackgroundStore {
     providerPageUrls: {},
     trackedHandles: {},
     trackedProfiles: {},
+    provenance: {},
   };
 }
 
@@ -190,6 +191,7 @@ function clearNormalizedData(store: BackgroundStore) {
   store.platforms.linkedin.extra.accountInfo = linkedinAccountInfo;
 
   store.trackedProfiles = {};
+  store.provenance = {};
   store.nextCaptureOrder = 1;
 }
 
