@@ -1,5 +1,6 @@
 import {
   emptyMetrics,
+  recordProvenance,
   recordRawPayload,
   storeComment,
   storeEngagement,
@@ -160,9 +161,16 @@ function migratePublicationRelations(
   migrateEngagements(istore.engagementsByPublication, istore.engagementsByPublication);
 }
 
+// Predicate do modo "profile" do Instagram: a publicação é do perfil rastreado quando o
+// username do autor casa com o valor de coleta. Fonte ÚNICA — reusada pelo scopeModes
+// .selects() (#9) e pelo filtro de conteúdo de processInstagramCapture.
+const isIgProfilePublication = (pub: SocialPublication, value: string) =>
+  pub.author.username?.toLowerCase() === value.toLowerCase();
+
 export function processInstagramCapture(store: BackgroundStore, request: CapturedPayloadMessage) {
   const istore = store.platforms.instagram;
-  const handle = trackedHandleForProvider(store, "instagram").toLowerCase();
+  const trackedHandle = trackedHandleForProvider(store, "instagram");
+  const handle = trackedHandle.toLowerCase();
   const publications = extractInstagramPublications(request.payload);
   const pageShortcode = instagramShortcodeFromUrl(request.pageUrl);
 
@@ -170,10 +178,13 @@ export function processInstagramCapture(store: BackgroundStore, request: Capture
     if (publication.shortcode && publication.shortcode === pageShortcode) {
       publication.capture_priority = 0;
     }
-    if (!handle || publication.author.username.toLowerCase() === handle) {
+    if (!handle || isIgProfilePublication(publication, handle)) {
       const prevMapping = publication.shortcode
         ? istore.publicationIdsByShortcode[publication.shortcode]
         : undefined;
+      if (handle) {
+        recordProvenance(store, "instagram", publication.publication_id, "profile", trackedHandle);
+      }
       storePublication(store, publication);
       if (publication.shortcode) {
         const prevId = prevMapping;
@@ -183,7 +194,7 @@ export function processInstagramCapture(store: BackgroundStore, request: Capture
         }
         istore.publicationIdsByShortcode[publication.shortcode] = newId;
       }
-      if (publication.author.username.toLowerCase() === handle) {
+      if (isIgProfilePublication(publication, handle)) {
         store.trackedProfiles.instagram = profileFromPublication(publication);
       }
     }
@@ -390,15 +401,15 @@ export function computeSummaryInstagram(store: BackgroundStore): ExportSummaryIn
   };
 }
 
-// Modos de Scope declaráveis (#9). O filtro real continua dentro de
-// processInstagramCapture / instagramPublicationAllowedForComments (compara
-// author.username com o handle); aqui só tornamos o modo "profile" declarável —
-// selects() casa pelo username do autor.
+// Modos de Scope (#9). O modo "profile" usa a MESMA predicate (isIgProfilePublication) que o
+// filtro de conteúdo de processInstagramCapture — fonte única. (O filtro de comentários,
+// instagramPublicationAllowedForComments, é engajamento e segue à parte.) selects() casa
+// pelo username do autor.
 export const scopeModes: ScopeMode[] = [
   {
     id: "profile",
     label: "Profile",
-    selects: (pub, value) => pub.author.username?.toLowerCase() === value.toLowerCase(),
+    selects: isIgProfilePublication,
   },
 ];
 

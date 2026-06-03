@@ -3,6 +3,7 @@ import { createStore, handleRuntimeMessage } from "../src/background/controller"
 import { recordProvenance } from "../src/background/store";
 import { publicationKey } from "../src/providers/shared/utils";
 import type { BackgroundStore } from "../src/shared/domain";
+import { instagramFeedPayload } from "./fixtures/instagram-payloads";
 import { userTweetsPayload } from "./fixtures/twitter-payloads";
 
 // Mini-harness: envia mensagens ao controller com contexto no-op.
@@ -55,5 +56,41 @@ describe("scope provenance (#9) — gravada na captura", () => {
     for (const p of Object.values(entries)) {
       expect(p).toEqual({ mode: "profile", value: "He4rtDevs" });
     }
+  });
+
+  test("Instagram: capturar feed do perfil rastreado grava Provenance", () => {
+    const store = createStore();
+    const send = sendTo(store);
+    send({ action: "SET_HANDLE", handle: "he4rtdevs" });
+    send({
+      action: "CAPTURED_PAYLOAD",
+      provider: "instagram",
+      endpoint: "InstagramFeedTimeline",
+      payload: instagramFeedPayload,
+      timestamp: "2026-05-20T13:00:00.000Z",
+      pageUrl: "https://www.instagram.com/",
+    });
+    const entries = store.provenance.instagram ?? {};
+    expect(Object.keys(entries).length).toBeGreaterThan(0);
+    for (const p of Object.values(entries)) {
+      expect(p).toEqual({ mode: "profile", value: "he4rtdevs" });
+    }
+  });
+
+  test("Provenance NUNCA vaza no export v3 (sem scope_mode/scope_value no JSON)", () => {
+    const store = createStore();
+    const send = sendTo(store);
+    send({ action: "SET_HANDLE", handle: "he4rtdevs" });
+    send({
+      action: "CAPTURED_PAYLOAD",
+      provider: "instagram",
+      endpoint: "InstagramFeedTimeline",
+      payload: instagramFeedPayload,
+      timestamp: "2026-05-20T13:00:00.000Z",
+      pageUrl: "https://www.instagram.com/",
+    });
+    const json = JSON.stringify(send({ action: "GET_EXPORT" }));
+    expect(json).not.toContain("scope_mode");
+    expect(json).not.toContain("scope_value");
   });
 });
