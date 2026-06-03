@@ -1,9 +1,15 @@
 import {
+  recordProvenance,
   storeEngagement,
   storePublication,
   trackedHandleForProvider,
 } from "../../background/store";
-import type { BackgroundStore, ExportSummaryX, ExportV3PlatformX } from "../../shared/domain";
+import type {
+  BackgroundStore,
+  ExportSummaryX,
+  ExportV3PlatformX,
+  SocialPublication,
+} from "../../shared/domain";
 import type { CapturedPayloadMessage } from "../../shared/messages";
 import type { BackgroundProviderFacet, ScopeMode } from "../contract";
 import { publicationKey } from "../shared/utils";
@@ -17,6 +23,12 @@ import {
 
 type AnyRecord = Record<string, any>;
 
+// Predicate do modo "profile" do X: a publicação é do perfil rastreado quando o autor
+// (username = screen_name) casa com o valor de coleta. Fonte ÚNICA — reusada tanto pelo
+// scopeModes.selects() (#9) quanto pelo filtro de processXCapture.
+const isXProfilePublication = (pub: SocialPublication, value: string) =>
+  pub.author.username?.toLowerCase() === value.toLowerCase();
+
 export function processXCapture(store: BackgroundStore, request: CapturedPayloadMessage) {
   const trackedHandle = trackedHandleForProvider(store, "x");
   const handle = trackedHandle.toLowerCase();
@@ -26,7 +38,7 @@ export function processXCapture(store: BackgroundStore, request: CapturedPayload
     processUserTweetsPayload(request.payload, trackedHandle, (tweet, publication, rawResult) => {
       const authorHandle = tweet.author.screen_name.toLowerCase();
 
-      if (authorHandle === handle) {
+      if (isXProfilePublication(publication, trackedHandle)) {
         if (!xstore.accountInfo && tweet.author.rest_id) {
           const authorResult = rawResult.core?.user_results?.result;
           const info = accountInfoFromUser(authorResult || {}, tweet);
@@ -34,6 +46,7 @@ export function processXCapture(store: BackgroundStore, request: CapturedPayload
           store.trackedProfiles.x = accountInfoToTrackedProfile(info);
         }
         xstore.tweets[tweet.tweet_id] = tweet;
+        recordProvenance(store, "x", publication.publication_id, "profile", trackedHandle);
         storePublication(store, publication);
       }
 
@@ -112,14 +125,14 @@ export function computeSummaryX(store: BackgroundStore): ExportSummaryX {
   };
 }
 
-// Modos de Scope declaráveis (#9). O filtro real continua dentro de processXCapture
-// (compara author.screen_name com o handle rastreado); aqui só tornamos o modo
-// "profile" declarável — selects() casa pelo username do autor (= screen_name no X).
+// Modos de Scope (#9). O modo "profile" usa a MESMA predicate (isXProfilePublication) que o
+// filtro de processXCapture — fonte única, sem divergência. selects() casa pelo username do
+// autor (= screen_name no X).
 export const scopeModes: ScopeMode[] = [
   {
     id: "profile",
     label: "Profile",
-    selects: (pub, value) => pub.author.username?.toLowerCase() === value.toLowerCase(),
+    selects: isXProfilePublication,
   },
 ];
 
