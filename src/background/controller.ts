@@ -66,8 +66,8 @@ function emptyInstagramStore(): InstagramStore {
 
 function emptyLinkedInStore(): LinkedInStore {
   return {
-    // Shape normalizado (alinhado a x/instagram). Hoje o write path do LinkedIn
-    // ainda dual-escreve só no store legado plano; estes ficam vazios até #8.
+    // Shape normalizado (alinhado a x/instagram): publications/comments/engagements
+    // do LinkedIn vivem aqui, populados pelo write path per-platform.
     publications: {},
     commentsByPublication: {},
     engagementsByPublication: {},
@@ -102,15 +102,6 @@ export function createStore(trackedHandle = ""): BackgroundStore {
     providerPageUrls: {},
     trackedHandles: {},
     trackedProfiles: {},
-
-    // Stores planos legados — DESCONTINUADOS (#8). Mantidos vazios apenas pelos
-    // testes que ainda referenciam estes campos (ver BackgroundStore em domain.ts).
-    publications: {},
-    commentsByPublication: {},
-    instagramPublicationIdsByShortcode: {},
-    tweets: {},
-    favoriters: {},
-    accountInfo: null,
   };
 }
 
@@ -443,8 +434,7 @@ function collectEngagements(store: BackgroundStore, provider: null | SocialProvi
   );
 }
 
-// Total de publicações somando os três stores normalizados (substitui o
-// Object.keys(store.publications).length do store legado plano).
+// Total de publicações somando os três stores normalizados per-platform.
 function totalPublicationCount(store: BackgroundStore) {
   return NORMALIZED_PLATFORMS.reduce(
     (sum, p) => sum + Object.keys((store.platforms[p] as NormalizedStore).publications).length,

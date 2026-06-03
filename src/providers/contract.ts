@@ -1,10 +1,10 @@
 import type { BackgroundStore, SocialProvider, SocialPublication } from "../shared/domain";
 import type { CapturedPayloadMessage } from "../shared/messages";
 
-// Contrato do Provider no service worker (estado strangler).
-// Hoje a faceta de processamento muta o store legado in-place; nas fatias de migração
-// por provider ela passa a normalizar para o NormalizedStore. As facetas de captura
-// (MAIN/ISO), scope e export entram nas fatias seguintes.
+// Contrato do Provider no service worker.
+// A faceta de processamento normaliza a captura para o NormalizedStore per-platform
+// (store.platforms.<id>). As facetas de captura (MAIN/ISO), scope e export são
+// módulos separados do provider.
 export type CaptureProcessor = (store: BackgroundStore, capture: CapturedPayloadMessage) => void;
 
 export type BackgroundProviderFacet = {

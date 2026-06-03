@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createStore, handleRuntimeMessage } from "../src/background/controller";
-import type { BackgroundStore } from "../src/shared/domain";
+import type { XStore } from "../src/shared/domain";
 import type { RuntimeMessage } from "../src/shared/messages";
 import {
   instagramChildCommentsPayload,
@@ -96,10 +96,10 @@ describe("background controller", () => {
     capture(app, "UserTweets", userTweetsPayload, "https://x.com/He4rtDevs");
 
     const response = app.sendMessage({ action: "GET_TWEETS" }) as {
-      accountInfo: BackgroundStore["accountInfo"];
+      accountInfo: XStore["accountInfo"];
       lastUpdated: null | string;
       replyCount: number;
-      tweets: BackgroundStore["tweets"][string][];
+      tweets: XStore["tweets"][string][];
     };
     const tweetsById = Object.fromEntries(response.tweets.map((tweet) => [tweet.tweet_id, tweet]));
 
@@ -130,7 +130,7 @@ describe("background controller", () => {
     );
 
     const response = app.sendMessage({ action: "GET_TWEETS" }) as {
-      accountInfo: BackgroundStore["accountInfo"];
+      accountInfo: XStore["accountInfo"];
     };
 
     expect(response.accountInfo).toEqual({
@@ -166,7 +166,7 @@ describe("background controller", () => {
     );
 
     const exported = app.sendMessage({ action: "GET_EXPORT" }) as {
-      per_platform: { x: { engagers: { likes_by_tweet: BackgroundStore["favoriters"] } } };
+      per_platform: { x: { engagers: { likes_by_tweet: XStore["favoriters"] } } };
     };
 
     expect(exported.per_platform.x.engagers.likes_by_tweet["100"]).toHaveLength(2);
@@ -200,7 +200,7 @@ describe("background controller", () => {
       tweetCount: number;
     };
     const response = app.sendMessage({ action: "GET_TWEETS" }) as {
-      tweets: BackgroundStore["tweets"][string][];
+      tweets: XStore["tweets"][string][];
     };
 
     expect(setResponse.tweetCount).toBe(1);

@@ -231,8 +231,8 @@ export type NormalizedStore = {
 
 // O store do LinkedIn agora É um NormalizedStore com o extra obrigatório e tipado.
 // O shape normalizado (publications/commentsByPublication/engagementsByPublication)
-// herdado de NormalizedStore é a fonte per-platform; `publications` hospeda as
-// SocialPublications do LinkedIn que antes só viviam no store legado plano.
+// herdado de NormalizedStore é a fonte per-platform; a riqueza bespoke do LinkedIn
+// (reaction_breakdown, feedOrder, reposts, etc.) fica em `extra`.
 export type LinkedInStore = NormalizedStore & {
   extra: LinkedInExtra;
 };
@@ -257,21 +257,6 @@ export type BackgroundStore = {
     instagram: InstagramStore;
     linkedin: LinkedInStore;
   };
-
-  // Stores planos legados — DESCONTINUADOS (#8). A fonte única passou a ser
-  // store.platforms.*; nada em src/ mais lê/escreve nestes campos. Os membros
-  // abaixo permanecem APENAS porque os testes (que não podemos editar) ainda os
-  // referenciam: background.test.ts usa BackgroundStore["accountInfo"|"tweets"|
-  // "favoriters"] como type-cast, e debug-instagram/trace-comments leem
-  // store.publications / commentsByPublication / instagramPublicationIdsByShortcode
-  // em console.log. Inicializados vazios e nunca preenchidos. Remover quando os
-  // testes puderem ser atualizados.
-  accountInfo: AccountInfo | null;
-  favoriters: Record<string, Favoriter[]>;
-  tweets: Record<string, TweetData>;
-  instagramPublicationIdsByShortcode: Record<string, string>;
-  publications: Record<string, SocialPublication>;
-  commentsByPublication: Record<string, SocialComment[]>;
 };
 
 // Export v3 ------------------------------------------------------------------

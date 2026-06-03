@@ -29,9 +29,7 @@ describe("trace", () => {
 
     const istore = store.platforms.instagram;
     console.log("Platform pubs:", Object.keys(istore.publications));
-    console.log("Legacy pubs:", Object.keys(store.publications));
     console.log("Platform pubIdsBySc:", Object.keys(istore.publicationIdsByShortcode));
-    console.log("Legacy pubIdsBySc:", Object.keys(store.instagramPublicationIdsByShortcode));
 
     const comments = extractInstagramComments(instagramCommentsPayload, "https://www.instagram.com/p/ABC123/");
     console.log("Extracted comments:", comments.map((c) => ({ id: c.comment_id, pubId: c.publication_id })));
@@ -47,7 +45,6 @@ describe("trace", () => {
 
     const resp = send({ action: "GET_PUBLICATIONS" }) as any;
     console.log("commentsCount:", resp.commentsCount);
-    console.log("Legacy commentsByPub keys:", Object.keys(store.commentsByPublication));
     console.log("Platform commentsByPub keys:", Object.keys(istore.commentsByPublication));
 
     expect(resp.commentsCount).toBe(2);
