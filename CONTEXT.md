@@ -39,7 +39,7 @@ Qualquer conta que engaja com uma Publication — tipicamente um membro da comun
 _Avoid_: user, engager, member
 
 **Scope**:
-A dimensão pela qual um Provider seleciona **quais Publications** coletar. Hoje só o modo `profile` (autor == Handle) é concreto; o conceito é extensível a `hashtag`, `campaign`, `post` sem rearquitetar.
+A dimensão pela qual um Provider seleciona **quais Publications** coletar. Modos `profile` (autor == Handle) e `search` (Publication casa uma query/evento) são concretos; o conceito é extensível a `hashtag`, `campaign`, `post` sem rearquitetar. **Nem todo Scope tem Tracked Account**: em `search`/`campaign` a `value` é uma palavra-chave/evento, não um Handle, e os autores das Publications são justamente os **Actors** de interesse (quem da comunidade falou do tema).
 _Avoid_: filter, target type
 
 **Collection Target**:
@@ -59,6 +59,7 @@ O carimbo em cada item normalizado dizendo de qual Scope (`mode` + `value`) ele 
 - Uma **Publication** recebe zero ou mais **Comments** e zero ou mais **Engagements**
 - Um **Engagement** liga exatamente um **Actor** a uma **Publication** (ou **Comment**)
 - Um **Provider** suporta um ou mais **Scopes** (como ele filtra o que coleta)
+- Um **Scope** `profile` está ancorado numa **Tracked Account** (Handle == autor); um **Scope** `search`/`campaign` **não tem Tracked Account** — é ancorado numa query/evento e o sinal vira o conjunto de **Actors** que publicaram sobre o tema
 - Um **Scope** seleciona **Publications**; **Comments**/**Engagements** entram por **Binding** com uma Publication selecionada ou com a **Tracked Account**
 - Todo item normalizado carrega **Provenance** (qual **Collection Target** o trouxe)
 
