@@ -4,6 +4,7 @@ import { recordProvenance } from "../src/background/store";
 import { publicationKey } from "../src/providers/shared/utils";
 import type { BackgroundStore } from "../src/shared/domain";
 import { instagramFeedPayload } from "./fixtures/instagram-payloads";
+import { linkedinFeedPayload } from "./fixtures/linkedin-payloads";
 import { userTweetsPayload } from "./fixtures/twitter-payloads";
 
 // Mini-harness: envia mensagens ao controller com contexto no-op.
@@ -92,5 +93,24 @@ describe("scope provenance (#9) — gravada na captura", () => {
     const json = JSON.stringify(send({ action: "GET_EXPORT" }));
     expect(json).not.toContain("scope_mode");
     expect(json).not.toContain("scope_value");
+  });
+
+  test("LinkedIn: capturar feed do perfil rastreado grava Provenance", () => {
+    const store = createStore();
+    const send = sendTo(store);
+    send({ action: "SET_HANDLE", handle: "He4rt Developers", provider: "linkedin" });
+    send({
+      action: "CAPTURED_PAYLOAD",
+      provider: "linkedin",
+      endpoint: "feedDashOrganizationalPageUpdates",
+      payload: linkedinFeedPayload,
+      timestamp: "2026-05-20T14:00:00.000Z",
+      pageUrl: "https://www.linkedin.com/company/he4rt/",
+    });
+    const entries = store.provenance.linkedin ?? {};
+    expect(Object.keys(entries).length).toBeGreaterThan(0);
+    for (const p of Object.values(entries)) {
+      expect(p).toEqual({ mode: "profile", value: "He4rt Developers" });
+    }
   });
 });
