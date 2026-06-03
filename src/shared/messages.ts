@@ -151,6 +151,19 @@ export type RawPayloadsResponse = {
   endpoints: Record<string, EndpointStore>;
 };
 
+// Collection Target (#9): o popup pergunta ao background qual alvo a URL da aba ativa
+// sugere, via o detectFromPage do scopeModes.profile do provider.
+export type DetectTargetMessage = {
+  action: "DETECT_TARGET";
+  pageUrl: string;
+  provider: SocialProvider;
+};
+
+export type DetectTargetResponse = {
+  mode: string;
+  target: null | string;
+};
+
 export type RuntimeMessage =
   | CapturedPayloadMessage
   | GraphqlCapturedMessage
@@ -171,7 +184,8 @@ export type RuntimeMessage =
   | GetAllSummaryMessage
   | SetHandlesMessage
   | GetHandlesMessage
-  | GetRawPayloadsMessage;
+  | GetRawPayloadsMessage
+  | DetectTargetMessage;
 
 export type PageCapturedMessage = {
   endpoint: string;

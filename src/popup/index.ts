@@ -57,6 +57,7 @@ document.addEventListener("DOMContentLoaded", () => {
   setupButtons();
   setupListeners();
   autoSelectTab();
+  suggestCollectionTarget();
 });
 
 const HOST_TAB_MAP: Array<{ host: string; tab: string }> = PROVIDER_METAS.flatMap((meta) =>
@@ -76,6 +77,8 @@ function switchTab(tabId: string) {
   if (tabId === "all") loadAllSummary();
   else if (tabId === "config") loadHandles();
   else loadPlatformData(tabId as SocialProvider);
+
+  renderCollectionTarget();
 }
 
 function autoSelectTab() {
@@ -92,6 +95,98 @@ function autoSelectTab() {
       }
     }
     switchTab("all");
+  });
+}
+
+// === Collection Target (#9) ===
+// Sugere o alvo de coleta a partir da URL da aba ativa: pergunta ao background
+// (DETECT_TARGET → detectFromPage do scopeModes.profile) e mostra um banner com o perfil
+// detectado + botão para rastrear. Profile-only por enquanto (único modo).
+
+const HANDLE_INPUT_IDS: Record<string, string> = {
+  x: "handleX",
+  instagram: "handleIg",
+  linkedin: "handleLi",
+};
+
+function providerFromUrl(url: string): null | SocialProvider {
+  for (const { host, tab } of HOST_TAB_MAP) {
+    if (url.includes(host)) return tab as SocialProvider;
+  }
+  return null;
+}
+
+// Estado da última detecção (da aba do BROWSER ativa). O banner é global no popup, então
+// só o exibimos quando a aba do POPUP ativa é a do provider detectado — senão o "Perfil
+// detectado no X" apareceria também nas abas Instagram/LinkedIn/Resumo/Config.
+let detectedTarget: { handles: HandlesMap; provider: SocialProvider; target: string } | null = null;
+
+function activePopupTab(): null | string {
+  return (document.querySelector(".tab.active") as HTMLElement | null)?.dataset.tab ?? null;
+}
+
+function suggestCollectionTarget() {
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    const url = tabs[0]?.url;
+    const provider = url ? providerFromUrl(url) : null;
+    if (!url || !provider) {
+      detectedTarget = null;
+      renderCollectionTarget();
+      return;
+    }
+    chrome.runtime.sendMessage(
+      { action: "DETECT_TARGET", provider, pageUrl: url },
+      (res: { mode: string; target: null | string } | undefined) => {
+        const target = res?.target ?? null;
+        if (!target) {
+          detectedTarget = null;
+          renderCollectionTarget();
+          return;
+        }
+        chrome.runtime.sendMessage(
+          { action: "GET_HANDLES" },
+          (handlesRes: { handles: HandlesMap } | undefined) => {
+            detectedTarget = { provider, target, handles: handlesRes?.handles || {} };
+            renderCollectionTarget();
+          },
+        );
+      },
+    );
+  });
+}
+
+function renderCollectionTarget() {
+  const banner = document.getElementById("collectionTarget");
+  if (!banner) return;
+  // Só exibe na aba do popup correspondente ao provider detectado.
+  if (!detectedTarget || activePopupTab() !== detectedTarget.provider) {
+    banner.classList.add("hidden");
+    return;
+  }
+  const { provider, target, handles } = detectedTarget;
+  const meta = TABS.find((t) => t.provider === provider);
+  const label = meta?.name ?? provider;
+  const color = meta?.color ?? "#888";
+  const tracked = (handles[provider] || "").toLowerCase() === target.toLowerCase();
+  const safeTarget = escapeHtml(target);
+  banner.classList.remove("hidden");
+
+  if (tracked) {
+    banner.innerHTML = `<span class="ct-dot" style="background:${color}"></span><span class="ct-text">Coletando <strong>${safeTarget}</strong> no ${label} · modo Profile</span>`;
+    return;
+  }
+
+  banner.innerHTML = `<span class="ct-dot" style="background:${color}"></span><span class="ct-text">Perfil detectado: <strong>${safeTarget}</strong></span><button id="ctTrackBtn" class="btn btn-xs" type="button">Rastrear</button>`;
+  document.getElementById("ctTrackBtn")?.addEventListener("click", () => {
+    const merged: HandlesMap = { ...handles, [provider]: target };
+    chrome.runtime.sendMessage({ action: "SET_HANDLES", handles: merged }, () => {
+      const input = document.getElementById(
+        HANDLE_INPUT_IDS[provider] || "",
+      ) as HTMLInputElement | null;
+      if (input) input.value = target;
+      suggestCollectionTarget();
+      loadPlatformData(provider);
+    });
   });
 }
 
@@ -139,9 +234,15 @@ function setupListeners() {
     }
   });
 
-  chrome.tabs.onActivated?.addListener(() => autoSelectTab());
+  chrome.tabs.onActivated?.addListener(() => {
+    autoSelectTab();
+    suggestCollectionTarget();
+  });
   chrome.tabs.onUpdated?.addListener((_tabId, changeInfo) => {
-    if (changeInfo.status === "complete" || changeInfo.url) autoSelectTab();
+    if (changeInfo.status === "complete" || changeInfo.url) {
+      autoSelectTab();
+      suggestCollectionTarget();
+    }
   });
 }
 

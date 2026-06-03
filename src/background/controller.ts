@@ -98,6 +98,7 @@ export function createStore(trackedHandle = ""): BackgroundStore {
     providerPageUrls: {},
     trackedHandles: {},
     trackedProfiles: {},
+    provenance: {},
   };
 }
 
@@ -190,6 +191,7 @@ function clearNormalizedData(store: BackgroundStore) {
   store.platforms.linkedin.extra.accountInfo = linkedinAccountInfo;
 
   store.trackedProfiles = {};
+  store.provenance = {};
   store.nextCaptureOrder = 1;
 }
 
@@ -758,6 +760,14 @@ export function handleRuntimeMessage(
         Object.entries(store.endpoints).filter(([, ep]) => !provider || ep.provider === provider),
       ),
     };
+  }
+
+  if (request.action === "DETECT_TARGET") {
+    const profile = BACKGROUND_PROVIDERS[request.provider]?.scopeModes.find(
+      (mode) => mode.id === "profile",
+    );
+    const target = profile?.detectFromPage?.(request.pageUrl) ?? null;
+    return { mode: "profile", target };
   }
 
   return undefined;

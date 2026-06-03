@@ -1,4 +1,5 @@
 import {
+  recordProvenance,
   storeComment,
   storeEngagement,
   storePublication,
@@ -38,6 +39,9 @@ export function processLinkedInCapture(store: BackgroundStore, request: Captured
   if (request.endpoint === "feedDashOrganizationalPageUpdates") {
     const publications = linkedinFeedToPublications(request.payload, handle);
     for (const pub of publications) {
+      // O filtro real (name OU headerText) vive no parser; aqui só gravamos a Provenance
+      // das publicações que já passaram por ele. Ver decisão 3 do plano #9.
+      if (handle) recordProvenance(store, "linkedin", pub.publication_id, "profile", handle);
       storePublication(store, pub);
     }
 
@@ -404,4 +408,5 @@ export const scopeModes: ScopeMode[] = [
 export const linkedinProvider: BackgroundProviderFacet = {
   id: "linkedin",
   processCapture: processLinkedInCapture,
+  scopeModes,
 };

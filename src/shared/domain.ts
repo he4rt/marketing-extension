@@ -67,9 +67,10 @@ export type SocialPublication = {
   reposted_publication_id?: null | string;
   shortcode?: string;
 
-  // Provenance do Scope (#9): qual modo/valor de coleta capturou esta publicação.
-  // Campos INTERNOS ao store — o exporter v3 NÃO os inclui, então permanecem
-  // opcionais e fora do golden-master.
+  // Provenance do Scope (#9) — RESERVADO para o v4. A Provenance interna ATIVA vive em
+  // BackgroundStore.provenance (mapa por publicação), de propósito fora da publicação,
+  // para nunca poder vazar no export v3 (byte-compat). Estes campos ficam como interface
+  // futura: quando o v4 ligar, o exporter os preenche a partir do mapa.
   scope_mode?: string;
   scope_value?: string;
 };
@@ -239,6 +240,11 @@ export type LinkedInStore = NormalizedStore & {
 
 // Main store ----------------------------------------------------------------
 
+// Provenance do Scope (#9): para cada publicação capturada, registra QUAL modo de coleta
+// (profile/…) e QUAL valor (handle/perfil) a trouxe. Mapa INTERNO — nunca é lido por
+// nenhum buildPlatformData*, então é impossível vazar no export v3.
+export type ScopeProvenance = { mode: string; value: string };
+
 export type BackgroundStore = {
   activeProvider: null | SocialProvider;
   archivedEndpoints: Record<string, EndpointStore>;
@@ -257,6 +263,9 @@ export type BackgroundStore = {
     instagram: InstagramStore;
     linkedin: LinkedInStore;
   };
+
+  // Provenance por publicação, chaveada por publicationKey(provider, id). Ver ScopeProvenance.
+  provenance: Partial<Record<SocialProvider, Record<string, ScopeProvenance>>>;
 };
 
 // Export v3 ------------------------------------------------------------------

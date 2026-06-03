@@ -57,6 +57,20 @@ export function trackedHandleForProvider(store: BackgroundStore, provider: Socia
   return (store.trackedHandles[provider] ?? store.trackedHandle).trim();
 }
 
+// Grava a Provenance do Scope (#9) de uma publicação: qual modo/valor de coleta a trouxe.
+// Mapa interno (store.provenance), nunca exportado no v3 — ver ScopeProvenance em domain.ts.
+export function recordProvenance(
+  store: BackgroundStore,
+  provider: SocialProvider,
+  publicationId: string,
+  mode: string,
+  value: string,
+) {
+  const map = store.provenance[provider] ?? {};
+  map[publicationKey(provider, publicationId)] = { mode, value };
+  store.provenance[provider] = map;
+}
+
 export function storePublication(store: BackgroundStore, publication: SocialPublication) {
   const provider = publication.provider;
   const key = publicationKey(provider, publication.publication_id);

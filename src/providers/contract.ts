@@ -10,6 +10,9 @@ export type CaptureProcessor = (store: BackgroundStore, capture: CapturedPayload
 export type BackgroundProviderFacet = {
   id: SocialProvider;
   processCapture: CaptureProcessor;
+  // Modos de Scope (#9) declarados pelo provider — usados pela detecção de Collection
+  // Target (DETECT_TARGET/detectFromPage) e pelo filtro por modo. Ver ScopeMode abaixo.
+  scopeModes: ScopeMode[];
 };
 
 // Seam de Scope (#9): torna o modo de coleta DECLARÁVEL por provider sem mover ainda
