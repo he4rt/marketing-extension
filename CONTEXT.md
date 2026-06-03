@@ -51,9 +51,16 @@ A ligação de um Engagement/Comment à Publication (ou Tracked Account) que ele
 **Provenance**:
 O carimbo em cada item normalizado dizendo de qual Scope (`mode` + `value`) ele veio; consumido pelo scoring do He4rt Hub.
 
+**Passive Capture**:
+O mecanismo de coleta original: a extensão **só observa** o que a página já carrega (intercepta fetch/XHR, lê SSR/DOM) enquanto você navega. Nenhum request parte de nós. É o modelo de X, Instagram e LinkedIn.
+_Avoid_: scraping (passivo não raspa agressivamente)
+
 **Active Fetch**:
-O **aprofundamento on-demand** de uma Publication já descoberta: o background **origina** requisições credenciadas (replay) para colher os Engagements/contadores que a captura **passiva** não trouxe (ex.: a busca descobre o post mas as reações vêm em streams preguiçosos). É **opt-in**, dosado (dry-run por padrão, volume limitado) e sujeito a ToS — distinto da captura passiva, que só observa o que a página já carrega.
-_Avoid_: scraping, crawl, automação de cliques
+Mecanismo de coleta em que a extensão **origina** requests a partir do background (service worker) — usando credenciais guardadas (**api-key**) ou o cookie de sessão vivo — em vez de esperar a navegação. Dois usos: (a) **aprofundar** on-demand uma Publication já descoberta, colhendo os Engagements/contadores que a captura passiva não trouxe (ex.: a busca do LinkedIn acha o post, mas as reações vêm em streams preguiçosos); (b) ser o **mecanismo primário** de um provider sem captura passiva (ex.: dev.to). Disparado on-demand (botão "Coletar") e por AFK (`chrome.alarms`, diário, só na analytics). É **opt-in**, dosado (dry-run por padrão, volume limitado) e sujeito a ToS — distinto da captura passiva, que só observa o que a página já carrega.
+_Avoid_: scraping, crawl, sync, automação de cliques
+
+**Background-only Provider**:
+Um Provider que coleta **apenas** por Active Fetch e portanto **não injeta content scripts** — declara `hostPermissions` (pro fetch credenciado) mas não `matches`. O dev.to é o primeiro.
 
 **Publication URN / Thread**:
 No LinkedIn, uma Publication tem **mais de uma identidade**: a `activity` (o *wrapper* que a busca/feed descobre) e o **thread** (`ugcPost`/`share`, a peça por baixo). Os **Engagements** são endereçados pelo **thread**, não pela activity — então descobrir a Publication (activity) **não basta** para colher engajamento; é preciso **resolver** `activity → thread`.
@@ -86,4 +93,5 @@ _Avoid_: id do post, postId (são ambíguos entre as duas identidades)
 - **Publication-centric (código) vs Engagement-centric (produto)** — o código atual trata `SocialPublication` como cidadão de primeira classe e deriva engajamentos; o produto (README + ADR-0001) quer o inverso. **Resolvido (arquitetura):** _Scope seleciona Publications; Engagements seguem por Binding e são o sinal exportado pro Hub._ O store guarda os dois, mas o produto lê pelo Engagement.
 - **Handle vs Profile** — o código conflata em `trackedHandle` (string) e `trackedProfiles` (metadados). Resolvido aqui: **Handle** é a identidade-string usada pra escopar; **Profile** são os metadados capturados.
 - **"reply"** — usado pra dois conceitos: um subtipo de **Publication** (tweet de resposta) e um **Comment**. Manter os dois sentidos explícitos.
+- **Passivo vs Ativo** — a regra de ouro do projeto (CLAUDE.md) cravava *"intercepta passivamente… não automatiza"*. O provider **dev.to** introduz **Active Fetch** (api-key na analytics oficial + cookie vivo em `/reactions`, on-demand + AFK diário só na analytics). **Resolução:** a regra passa a ser *"passivo por padrão; Active Fetch é exceção explícita, declarada por provider, GET a endpoints da própria conta logada"*. dev.to é **Background-only Provider** (sem content script). Ver ADR-0003 (a decisão e seus trade-offs de ToS/segurança).
 - **activity vs thread (ugcPost) no LinkedIn** — a busca/feed entrega a `activity` URN, mas os **Engagements** são endereçados pelo **thread** (`ugcPost`/`share`). Pedir reactions/comments/reposts pela `activity` retorna **vazio** (HTTP 200, 0 itens) — não erro, o que engana. **Resolvido (entendimento):** _o **Active Fetch** precisa de um passo de **resolve** `activity→thread` antes do fan-out; a `activity` identifica a Publication, o `thread` endereça os Engagements._ Detalhes e plano em [`docs/specs/2026-06-05-l3-replay-findings.md`](docs/specs/2026-06-05-l3-replay-findings.md).
