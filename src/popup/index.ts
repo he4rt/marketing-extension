@@ -1,12 +1,13 @@
 import type {
   EndpointStore,
   ExportJSON,
-  LinkedInPostData,
+  ExportLinkedInPost,
   SocialComment,
   SocialEngagement,
   SocialProvider,
   SocialPublication,
 } from "../shared/domain";
+import { PROVIDER_METAS } from "../providers/meta";
 
 type ProviderData = {
   publications: Record<string, SocialPublication>;
@@ -17,7 +18,7 @@ type ProviderData = {
 
 type LinkedInProviderData = {
   type: "linkedin";
-  content: LinkedInPostData[];
+  content: ExportLinkedInPost[];
   lastUpdated: string | null;
 };
 
@@ -41,11 +42,12 @@ type PlatformTabConfig = {
   name: string;
 };
 
-const TABS: PlatformTabConfig[] = [
-  { prefix: "x", provider: "x", color: "#1d9bf0", name: "X" },
-  { prefix: "ig", provider: "instagram", color: "#ff7ac8", name: "Instagram" },
-  { prefix: "li", provider: "linkedin", color: "#0a66c2", name: "LinkedIn" },
-];
+const TABS: PlatformTabConfig[] = PROVIDER_METAS.map((meta) => ({
+  prefix: meta.popupPrefix,
+  provider: meta.id,
+  color: meta.color,
+  name: meta.name,
+}));
 
 let refreshSequence = 0;
 
@@ -57,17 +59,18 @@ document.addEventListener("DOMContentLoaded", () => {
   autoSelectTab();
 });
 
-const HOST_TAB_MAP: Array<{ host: string; tab: string }> = [
-  { host: "x.com", tab: "x" },
-  { host: "twitter.com", tab: "x" },
-  { host: "instagram.com", tab: "instagram" },
-  { host: "linkedin.com", tab: "linkedin" },
-];
+const HOST_TAB_MAP: Array<{ host: string; tab: string }> = PROVIDER_METAS.flatMap((meta) =>
+  meta.hosts.map((host) => ({ host, tab: meta.id })),
+);
 
 function switchTab(tabId: string) {
-  document.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
+  document.querySelectorAll(".tab").forEach((t) => {
+    t.classList.remove("active");
+  });
   document.querySelector(`.tab[data-tab="${tabId}"]`)?.classList.add("active");
-  document.querySelectorAll(".tab-content").forEach((c) => c.classList.add("hidden"));
+  document.querySelectorAll(".tab-content").forEach((c) => {
+    c.classList.add("hidden");
+  });
   document.getElementById(`tab-${tabId}`)?.classList.remove("hidden");
 
   if (tabId === "all") loadAllSummary();
@@ -77,10 +80,16 @@ function switchTab(tabId: string) {
 
 function autoSelectTab() {
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    if (!tabs[0]?.url) { switchTab("all"); return; }
+    if (!tabs[0]?.url) {
+      switchTab("all");
+      return;
+    }
     const url = tabs[0].url;
     for (const { host, tab } of HOST_TAB_MAP) {
-      if (url.includes(host)) { switchTab(tab); return; }
+      if (url.includes(host)) {
+        switchTab(tab);
+        return;
+      }
     }
     switchTab("all");
   });
@@ -96,9 +105,15 @@ function setupTabClicks() {
 
 function setupButtons() {
   TABS.forEach(({ prefix, provider }) => {
-    document.getElementById(`${prefix}ExportBtn`)?.addEventListener("click", () => exportPlatform(provider));
-    document.getElementById(`${prefix}ExportRawBtn`)?.addEventListener("click", () => exportRaw(provider));
-    document.getElementById(`${prefix}ClearBtn`)?.addEventListener("click", () => clearPlatform(provider));
+    document
+      .getElementById(`${prefix}ExportBtn`)
+      ?.addEventListener("click", () => exportPlatform(provider));
+    document
+      .getElementById(`${prefix}ExportRawBtn`)
+      ?.addEventListener("click", () => exportRaw(provider));
+    document
+      .getElementById(`${prefix}ClearBtn`)
+      ?.addEventListener("click", () => clearPlatform(provider));
   });
 
   document.getElementById("allExportBtn")?.addEventListener("click", () => exportPlatform(null));
@@ -140,18 +155,15 @@ function getElement<T extends HTMLElement = HTMLElement>(id: string): T {
 
 function loadPlatformData(provider: SocialProvider) {
   const seq = ++refreshSequence;
-  chrome.runtime.sendMessage(
-    { action: "GET_PLATFORM_DATA", provider },
-    (response: unknown) => {
-      if (seq !== refreshSequence) return;
-      if (!response) return;
-      if (provider === "linkedin") {
-        renderLinkedIn(response as LinkedInProviderData);
-      } else {
-        renderProvider(response as ProviderData);
-      }
-    },
-  );
+  chrome.runtime.sendMessage({ action: "GET_PLATFORM_DATA", provider }, (response: unknown) => {
+    if (seq !== refreshSequence) return;
+    if (!response) return;
+    if (provider === "linkedin") {
+      renderLinkedIn(response as LinkedInProviderData);
+    } else {
+      renderProvider(response as ProviderData);
+    }
+  });
 }
 
 function renderProvider(data: ProviderData) {
@@ -184,7 +196,8 @@ function renderProvider(data: ProviderData) {
     const typeClass = `publication-type-${pub.type}`;
     const date = pub.created_at ? formatDate(pub.created_at) : "";
     const author = pub.author.username ? `@${pub.author.username}` : "Publicação visível";
-    const text = pub.text || (pub.is_placeholder ? "Dados básicos capturados pelo DOM" : "(sem legenda)");
+    const text =
+      pub.text || (pub.is_placeholder ? "Dados básicos capturados pelo DOM" : "(sem legenda)");
 
     card.innerHTML = `
       <div class="publication-top">
@@ -281,42 +294,46 @@ function toEngagerSummary(v: unknown): string {
 
 function loadAllSummary() {
   const seq = ++refreshSequence;
-  chrome.runtime.sendMessage(
-    { action: "GET_ALL_SUMMARY" },
-    (r: AllSummary | undefined) => {
-      if (seq !== refreshSequence) return;
-      if (!r) return;
-      getElement("allTotal").textContent =
-        `${r.total_content} ${plural(r.total_content, "publicação no total", "publicações no total")}`;
-      getElement("allXCount").textContent = String(r.by_platform?.x?.content_count ?? 0);
-      getElement("allIgCount").textContent = String(r.by_platform?.instagram?.content_count ?? 0);
-      getElement("allLiCount").textContent = String(r.by_platform?.linkedin?.content_count ?? 0);
+  chrome.runtime.sendMessage({ action: "GET_ALL_SUMMARY" }, (r: AllSummary | undefined) => {
+    if (seq !== refreshSequence) return;
+    if (!r) return;
+    getElement("allTotal").textContent =
+      `${r.total_content} ${plural(r.total_content, "publicação no total", "publicações no total")}`;
+    getElement("allXCount").textContent = String(r.by_platform?.x?.content_count ?? 0);
+    getElement("allIgCount").textContent = String(r.by_platform?.instagram?.content_count ?? 0);
+    getElement("allLiCount").textContent = String(r.by_platform?.linkedin?.content_count ?? 0);
 
-      const empty = getElement("allEmpty");
-      if (r.total_content === 0) {
-        empty.classList.remove("hidden");
-      } else {
-        empty.classList.add("hidden");
-      }
-    },
-  );
+    const empty = getElement("allEmpty");
+    if (r.total_content === 0) {
+      empty.classList.remove("hidden");
+    } else {
+      empty.classList.add("hidden");
+    }
+  });
 }
 
 // --- Handles ---
 
 function loadHandles() {
-  chrome.runtime.sendMessage({ action: "GET_HANDLES" }, (r: { handles: HandlesMap } | undefined) => {
-    if (!r?.handles) return;
-    (document.getElementById("handleX") as HTMLInputElement).value = r.handles.x || "";
-    (document.getElementById("handleIg") as HTMLInputElement).value = r.handles.instagram || "";
-    (document.getElementById("handleLi") as HTMLInputElement).value = r.handles.linkedin || "";
-  });
+  chrome.runtime.sendMessage(
+    { action: "GET_HANDLES" },
+    (r: { handles: HandlesMap } | undefined) => {
+      if (!r?.handles) return;
+      (document.getElementById("handleX") as HTMLInputElement).value = r.handles.x || "";
+      (document.getElementById("handleIg") as HTMLInputElement).value = r.handles.instagram || "";
+      (document.getElementById("handleLi") as HTMLInputElement).value = r.handles.linkedin || "";
+    },
+  );
 }
 
 function saveHandles() {
   const x = (document.getElementById("handleX") as HTMLInputElement).value.trim().replace(/^@/, "");
-  const ig = (document.getElementById("handleIg") as HTMLInputElement).value.trim().replace(/^@/, "");
-  const li = (document.getElementById("handleLi") as HTMLInputElement).value.trim().replace(/^@/, "");
+  const ig = (document.getElementById("handleIg") as HTMLInputElement).value
+    .trim()
+    .replace(/^@/, "");
+  const li = (document.getElementById("handleLi") as HTMLInputElement).value
+    .trim()
+    .replace(/^@/, "");
   (document.getElementById("handleX") as HTMLInputElement).value = x;
   (document.getElementById("handleIg") as HTMLInputElement).value = ig;
   (document.getElementById("handleLi") as HTMLInputElement).value = li;
@@ -339,13 +356,10 @@ function saveHandles() {
 // --- Export ---
 
 function exportPlatform(provider: SocialProvider | null) {
-  chrome.runtime.sendMessage(
-    { action: "GET_EXPORT", provider },
-    (data: ExportJSON | undefined) => {
-      if (!data) return;
-      downloadJson(data, exportFilename(data));
-    },
-  );
+  chrome.runtime.sendMessage({ action: "GET_EXPORT", provider }, (data: ExportJSON | undefined) => {
+    if (!data) return;
+    downloadJson(data, exportFilename(data));
+  });
 }
 
 function exportRaw(provider: SocialProvider | null) {
@@ -390,9 +404,16 @@ function dateStamp() {
 
 function labelType(type: string) {
   const labels: Record<string, string> = {
-    carousel: "carrossel", image: "imagem", original: "original",
-    quote: "quote", reel: "reel", reply: "resposta", repost: "repost",
-    retweet: "retweet", unknown: "tipo incerto", video: "video",
+    carousel: "carrossel",
+    image: "imagem",
+    original: "original",
+    quote: "quote",
+    reel: "reel",
+    reply: "resposta",
+    repost: "repost",
+    retweet: "retweet",
+    unknown: "tipo incerto",
+    video: "video",
   };
   return labels[type] || type;
 }

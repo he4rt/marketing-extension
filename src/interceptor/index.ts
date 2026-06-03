@@ -1,117 +1,35 @@
+import { captureFacetForHost } from "../capture/registry";
+import type { NetworkInterceptStrategy } from "../capture/strategies";
 import type { SocialProvider } from "../shared/domain";
 import type { PageCapturedMessage } from "../shared/messages";
 
-const X_GRAPHQL_PATH = "/i/api/graphql/";
-const LINKEDIN_VOYAGER_PATH = "/voyager/api/graphql";
+// Motor de captura de rede (MAIN world). Antes este arquivo carregava um if-cascade por
+// provider (extractX/LinkedIn/InstagramEndpointName, markers, infer*). Agora ele só patcheia
+// fetch/XHR e delega a DETECÇÃO para a estratégia networkIntercept do provider ativo, lida do
+// registry de captura. As mensagens emitidas (SOCIAL_CAPTURED) são idênticas às de antes.
 
-const LINKEDIN_ENDPOINT_MAP: Record<string, string> = {
-  voyagerFeedDashOrganizationalPageUpdates: "feedDashOrganizationalPageUpdates",
-  voyagerSocialDashReactions: "socialDashReactions",
-  voyagerFeedDashReshareFeed: "feedDashReshareFeed",
-  voyagerSocialDashComments: "socialDashComments",
+type ResolvedStrategy = {
+  provider: SocialProvider;
+  strategy: NetworkInterceptStrategy;
 };
 
-const INSTAGRAM_MARKERS = [
-  "xdt_api__v1__feed__timeline__connection",
-  "xdt_api__v1__media__media_id__comments__connection",
-  "xdt_api__v1__media__media_id__comments__parent_comment_id__child_comments__connection",
-  '"like_count"',
-  '"comment_count"',
-  '"profile_pic_url"',
-];
-
-function providerFromUrl(url: string): null | SocialProvider {
+function resolveStrategy(url: string): ResolvedStrategy | null {
+  let hostname: string;
   try {
-    const host = new URL(url, window.location.href).hostname;
-    if (host === "x.com" || host.endsWith(".x.com") || host === "twitter.com") return "x";
-    if (host === "www.instagram.com" || host === "instagram.com") return "instagram";
-    if (host === "www.linkedin.com" || host === "linkedin.com") return "linkedin";
-  } catch {}
-  return null;
-}
-
-function extractXEndpointName(url: string) {
-  const idx = url.indexOf(X_GRAPHQL_PATH);
-  if (idx === -1) return null;
-  const after = url.substring(idx + X_GRAPHQL_PATH.length);
-  const parts = after.split("/");
-  if (parts.length < 2) return null;
-  return parts[1]?.split("?")[0] || null;
-}
-
-function extractLinkedInEndpointName(url: string) {
-  const idx = url.indexOf(LINKEDIN_VOYAGER_PATH);
-  if (idx === -1) return null;
-  try {
-    const parsed = new URL(url, window.location.href);
-    const queryId = parsed.searchParams.get("queryId");
-    if (!queryId) return null;
-    const prefix = queryId.split(".")[0] || "";
-    return LINKEDIN_ENDPOINT_MAP[prefix] || prefix;
+    hostname = new URL(url, window.location.href).hostname;
   } catch {
     return null;
   }
+  const facet = captureFacetForHost(hostname);
+  if (!facet?.networkIntercept) return null;
+  return { provider: facet.id, strategy: facet.networkIntercept };
 }
 
-function extractInstagramEndpointName(url: string, body?: BodyInit | null) {
-  const parsed = new URL(url, window.location.href);
-  const bodyText = typeof body === "string" ? body : "";
-
-  if (parsed.pathname === "/api/graphql" || parsed.pathname === "/graphql/query/") {
-    const params = new URLSearchParams(bodyText || parsed.search);
-    return (
-      params.get("fb_api_req_friendly_name") ||
-      params.get("doc_id") ||
-      parsed.searchParams.get("doc_id") ||
-      "InstagramGraphQL"
-    );
-  }
-
-  if (parsed.pathname.includes("/api/v1/feed/timeline")) return "InstagramFeedTimeline";
-  if (/\/api\/v1\/media\/[^/]+\/comments/.test(parsed.pathname)) return "InstagramComments";
-  if (/\/api\/v1\/media\/[^/]+\/likers/.test(parsed.pathname)) return "InstagramLikers";
-  if (/\/(?:p|reel|reels)\/[^/]+\/liked_by/.test(parsed.pathname)) return "InstagramLikedByPage";
-  if (/\/(?:p|reel|reels)\/[^/]+/.test(parsed.pathname)) return "InstagramMediaPage";
-
-  return null;
-}
-
-function inferInstagramEndpointFromPayload(payload: unknown, fallback: string) {
-  let serialized = "";
-  try {
-    serialized = JSON.stringify(payload);
-  } catch {
-    return fallback;
-  }
-
-  if (serialized.includes("xdt_api__v1__feed__timeline__connection")) {
-    return "InstagramFeedTimeline";
-  }
-  if (
-    serialized.includes("xdt_api__v1__media__media_id__comments__connection") ||
-    serialized.includes(
-      "xdt_api__v1__media__media_id__comments__parent_comment_id__child_comments__connection",
-    )
-  ) {
-    return "InstagramComments";
-  }
-  if (serialized.includes('"profile_pic_url"') && serialized.includes('"username"')) {
-    return fallback === "InstagramPayload" ? "InstagramLikers" : fallback;
-  }
-  if (serialized.includes('"like_count"') || serialized.includes('"comment_count"')) {
-    return fallback === "InstagramPayload" ? "InstagramMedia" : fallback;
-  }
-  return fallback;
-}
-
-function shouldPostInstagramPayload(endpoint: string | null, payload: unknown) {
-  if (endpoint) return true;
-  try {
-    const serialized = JSON.stringify(payload);
-    return INSTAGRAM_MARKERS.some((marker) => serialized.includes(marker));
-  } catch {
-    return false;
-  }
+// Decide se a requisição interessa. Reproduz `endpoint || provider === "instagram"`:
+// intercepta quando há endpoint na URL OU quando a estratégia tem gate (inspeciona toda
+// resposta mesmo sem endpoint na URL — o caso do Instagram).
+function shouldIntercept(strategy: NetworkInterceptStrategy, endpoint: string | null) {
+  return Boolean(endpoint) || Boolean(strategy.gate);
 }
 
 function postPayload(provider: SocialProvider, endpoint: string, url: string, payload: unknown) {
@@ -128,31 +46,20 @@ function postPayload(provider: SocialProvider, endpoint: string, url: string, pa
   );
 }
 
-async function inspectResponse(
-  provider: SocialProvider,
-  endpoint: null | string,
+// Aplica gate + rename da estratégia e posta, se o endpoint final for válido. Reproduz o
+// antigo inspectResponse: linkedin/x postam só com endpoint; instagram passa pelo gate e
+// reclassifica o endpoint pelo payload antes de postar.
+function emitFromPayload(
+  resolved: ResolvedStrategy,
+  endpoint: string | null,
   url: string,
-  response: Response,
+  payload: unknown,
 ) {
-  try {
-    const clone = response.clone();
-    const data = await clone.json();
-    if (provider === "linkedin") {
-      if (endpoint) postPayload(provider, endpoint, url, data);
-      return;
-    }
-    if (provider === "instagram") {
-      if (!shouldPostInstagramPayload(endpoint, data)) return;
-      postPayload(
-        provider,
-        inferInstagramEndpointFromPayload(data, endpoint || "InstagramPayload"),
-        url,
-        data,
-      );
-      return;
-    }
-    if (endpoint) postPayload(provider, endpoint, url, data);
-  } catch {}
+  const { provider, strategy } = resolved;
+  if (strategy.gate && !strategy.gate(payload, endpoint)) return;
+  const finalEndpoint = strategy.rename ? strategy.rename(payload, endpoint) : endpoint;
+  if (!finalEndpoint) return;
+  postPayload(provider, finalEndpoint, url, payload);
 }
 
 const originalFetch = window.fetch;
@@ -164,18 +71,18 @@ window.fetch = function patchedFetch(this: typeof window, ...args: Parameters<ty
       : resource instanceof Request
         ? resource.url
         : String(resource || "");
-  const provider = providerFromUrl(url);
+  const resolved = resolveStrategy(url);
 
-  if (provider) {
-    const endpoint =
-      provider === "x"
-        ? extractXEndpointName(url)
-        : provider === "linkedin"
-          ? extractLinkedInEndpointName(url)
-          : extractInstagramEndpointName(url, init?.body);
-    if (endpoint || provider === "instagram") {
+  if (resolved) {
+    const match = resolved.strategy.match(url, init ? { body: init.body } : null);
+    const endpoint = match?.endpoint ?? null;
+    if (match && shouldIntercept(resolved.strategy, endpoint)) {
       return originalFetch.apply(this, args).then(async (response) => {
-        await inspectResponse(provider, endpoint, url, response);
+        try {
+          const clone = response.clone();
+          const data = await clone.json();
+          emitFromPayload(resolved, endpoint, url, data);
+        } catch {}
         return response;
       });
     }
@@ -189,31 +96,8 @@ const originalXHRSend = XMLHttpRequest.prototype.send;
 
 type CapturedXMLHttpRequest = XMLHttpRequest & {
   _he4rtEndpoint?: null | string;
-  _he4rtProvider?: null | SocialProvider;
+  _he4rtResolved?: ResolvedStrategy | null;
   _he4rtUrl?: string;
-};
-
-XMLHttpRequest.prototype.open = function patchedOpen(
-  this: CapturedXMLHttpRequest,
-  method: string,
-  url: string | URL,
-  async: boolean = true,
-  username?: null | string,
-  password?: null | string,
-) {
-  const absoluteUrl = resolveUrl(url);
-  const provider = providerFromUrl(absoluteUrl);
-  this._he4rtUrl = absoluteUrl;
-  this._he4rtProvider = provider;
-  this._he4rtEndpoint =
-    provider === "x"
-      ? extractXEndpointName(absoluteUrl)
-      : provider === "linkedin"
-        ? extractLinkedInEndpointName(absoluteUrl)
-        : provider === "instagram"
-          ? extractInstagramEndpointName(absoluteUrl)
-          : null;
-  return originalXHROpen.call(this, method, url, async, username ?? null, password ?? null);
 };
 
 function resolveUrl(raw: string | URL): string {
@@ -227,10 +111,27 @@ function resolveUrl(raw: string | URL): string {
   return raw.href;
 }
 
+XMLHttpRequest.prototype.open = function patchedOpen(
+  this: CapturedXMLHttpRequest,
+  method: string,
+  url: string | URL,
+  async: boolean = true,
+  username?: null | string,
+  password?: null | string,
+) {
+  const absoluteUrl = resolveUrl(url);
+  const resolved = resolveStrategy(absoluteUrl);
+  this._he4rtUrl = absoluteUrl;
+  this._he4rtResolved = resolved;
+  this._he4rtEndpoint = resolved ? (resolved.strategy.match(absoluteUrl)?.endpoint ?? null) : null;
+  return originalXHROpen.call(this, method, url, async, username ?? null, password ?? null);
+};
+
 XMLHttpRequest.prototype.send = function patchedSend(this: CapturedXMLHttpRequest, ...args) {
-  if (this._he4rtProvider && (this._he4rtEndpoint || this._he4rtProvider === "instagram" || this._he4rtProvider === "linkedin")) {
-    const provider = this._he4rtProvider;
+  const resolved = this._he4rtResolved;
+  if (resolved && shouldIntercept(resolved.strategy, this._he4rtEndpoint || null)) {
     const url = this._he4rtUrl || "";
+    const endpoint = this._he4rtEndpoint || null;
     const capturedResponseType = this.responseType;
 
     this.addEventListener("load", async function onLoad() {
@@ -249,26 +150,14 @@ XMLHttpRequest.prototype.send = function patchedSend(this: CapturedXMLHttpReques
         }
 
         const data = JSON.parse(raw);
-
-        if (provider === "instagram") {
-          if (!shouldPostInstagramPayload(xhr._he4rtEndpoint || null, data)) return;
-          postPayload(
-            "instagram",
-            inferInstagramEndpointFromPayload(data, xhr._he4rtEndpoint || "InstagramPayload"),
-            url,
-            data,
-          );
-          return;
-        }
-        if (provider === "linkedin" && xhr._he4rtEndpoint) {
-          postPayload("linkedin", xhr._he4rtEndpoint, url, data);
-          return;
-        }
-        if (provider === "x" && xhr._he4rtEndpoint) {
-          postPayload("x", xhr._he4rtEndpoint, url, data);
-        }
+        emitFromPayload(resolved, endpoint, url, data);
       } catch (e) {
-        console.debug("[Interceptor] XHR parse error:", url, capturedResponseType, (e as Error).message);
+        console.debug(
+          "[Interceptor] XHR parse error:",
+          url,
+          capturedResponseType,
+          (e as Error).message,
+        );
       }
     });
   }

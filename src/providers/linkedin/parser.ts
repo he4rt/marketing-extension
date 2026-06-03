@@ -491,19 +491,21 @@ function extractRepostEntry(
   if (!authorName && !authorUrn) return null;
 
   const activityIdMatch = String(elementUrn).match(/urn:li:activity:(\d+)/);
-  const activityUrn = String(metadata.backendUrn || (activityIdMatch ? `urn:li:activity:${activityIdMatch[1]}` : ""));
+  const activityUrn = String(
+    metadata.backendUrn || (activityIdMatch ? `urn:li:activity:${activityIdMatch[1]}` : ""),
+  );
   if (!activityUrn) return null;
 
   let avatarVectorImage: AnyRecord | null = null;
-  const imgDetail = ((actor.image as AnyRecord)?.attributes as Array<AnyRecord>)?.[0]
-    ?.detailData as AnyRecord | undefined;
+  const imgDetail = ((actor.image as AnyRecord)?.attributes as Array<AnyRecord>)?.[0]?.detailData as
+    | AnyRecord
+    | undefined;
   if (imgDetail) {
     const companyLogo = imgDetail.nonEntityCompanyLogo as AnyRecord | undefined;
     if (companyLogo) avatarVectorImage = companyLogo.vectorImage as AnyRecord | null;
     if (!avatarVectorImage) {
       const profilePic =
-        (imgDetail.nonEntityProfilePicture as AnyRecord) ||
-        (imgDetail.profilePicture as AnyRecord);
+        (imgDetail.nonEntityProfilePicture as AnyRecord) || (imgDetail.profilePicture as AnyRecord);
       avatarVectorImage = (profilePic?.vectorImage as AnyRecord) || null;
     }
   }
@@ -769,10 +771,7 @@ function extractMetricsDeep(
   return metrics;
 }
 
-export function linkedinFeedToPosts(
-  payload: unknown,
-  trackedHandle: string,
-): LinkedInPostData[] {
+export function linkedinFeedToPosts(payload: unknown, trackedHandle: string): LinkedInPostData[] {
   const data = ((payload as AnyRecord)?.data as AnyRecord)?.data as AnyRecord | undefined;
   if (!data) return [];
 

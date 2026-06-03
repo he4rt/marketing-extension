@@ -66,6 +66,12 @@ export type SocialPublication = {
   reposted_publication?: Pick<SocialPublication, "author" | "metrics" | "publication_id" | "text">;
   reposted_publication_id?: null | string;
   shortcode?: string;
+
+  // Provenance do Scope (#9): qual modo/valor de coleta capturou esta publicação.
+  // Campos INTERNOS ao store — o exporter v3 NÃO os inclui, então permanecem
+  // opcionais e fora do golden-master.
+  scope_mode?: string;
+  scope_value?: string;
 };
 
 export type SocialComment = {
@@ -197,7 +203,13 @@ export type LinkedInCommentStore = {
   items: SocialComment[];
 };
 
-export type LinkedInStore = {
+// Riqueza específica do LinkedIn que NÃO cabe no shape normalizado
+// (publications/comments/engagements). Vive no campo `extra` do NormalizedStore,
+// tipado na borda do provider. Aqui moram reaction_breakdown/total_reactions
+// (em posts[].metrics), a ordem do feed, reaction_type por usuário, o payload
+// completo de reposts/ACTOR_COMPONENT, reações em comentários e o accountInfo
+// que vira o trackedAccountUrn de audience_interactions.
+export type LinkedInExtra = {
   posts: Record<string, LinkedInPostData>;
   reactions: Record<string, LinkedInEngagerStore>;
   reposts: Record<string, LinkedInRepostStore>;
@@ -211,6 +223,18 @@ export type NormalizedStore = {
   publications: Record<string, SocialPublication>;
   commentsByPublication: Record<string, SocialComment[]>;
   engagementsByPublication: Record<string, SocialEngagement[]>;
+  // Aditivo/opcional: bolsão tipado na borda do provider para riqueza que não
+  // cabe no shape normalizado. x/instagram não o usam (fica undefined); LinkedIn
+  // guarda aqui seu store bespoke (LinkedInExtra). NÃO vaza para o export v3.
+  extra?: unknown;
+};
+
+// O store do LinkedIn agora É um NormalizedStore com o extra obrigatório e tipado.
+// O shape normalizado (publications/commentsByPublication/engagementsByPublication)
+// herdado de NormalizedStore é a fonte per-platform; a riqueza bespoke do LinkedIn
+// (reaction_breakdown, feedOrder, reposts, etc.) fica em `extra`.
+export type LinkedInStore = NormalizedStore & {
+  extra: LinkedInExtra;
 };
 
 // Main store ----------------------------------------------------------------
@@ -233,18 +257,6 @@ export type BackgroundStore = {
     instagram: InstagramStore;
     linkedin: LinkedInStore;
   };
-
-  // Legacy flat stores (kept during migration, written in parallel)
-  accountInfo: AccountInfo | null;
-  favoriters: Record<string, Favoriter[]>;
-  tweets: Record<string, TweetData>;
-  communityReplies: Record<string, SocialPublication>;
-  instagramPublicationIdsByShortcode: Record<string, string>;
-  instagramVisiblePublications: InstagramStore["visiblePublications"];
-  instagramVisibleComments: InstagramStore["visibleComments"];
-  publications: Record<string, SocialPublication>;
-  commentsByPublication: Record<string, SocialComment[]>;
-  engagementsByPublication: Record<string, SocialEngagement[]>;
 };
 
 // Export v3 ------------------------------------------------------------------

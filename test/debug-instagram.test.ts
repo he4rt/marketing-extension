@@ -14,7 +14,7 @@ describe("debug instagram comments", () => {
         JSON.stringify(
           handleRuntimeMessage(store, req, {
             log: (m: string) => console.log("[log]", m),
-            persistHandle: (h: string) => {},
+            persistHandle: () => {},
           }),
         ),
       );
@@ -22,7 +22,6 @@ describe("debug instagram comments", () => {
 
     send({ action: "SET_HANDLE", handle: "he4rtdevs" });
 
-    console.log("publicationIdsByShortcode:", store.instagramPublicationIdsByShortcode);
     console.log("platform pubIds:", store.platforms.instagram.publicationIdsByShortcode);
 
     send({
@@ -34,9 +33,7 @@ describe("debug instagram comments", () => {
       pageUrl: "https://www.instagram.com/",
     });
 
-    console.log("After feed, publications:", Object.keys(store.publications));
     console.log("After feed, platform pubs:", Object.keys(store.platforms.instagram.publications));
-    console.log("After feed, pubIdsByShortcode:", store.instagramPublicationIdsByShortcode);
     console.log("After feed, platform pubIdsByShortcode:", store.platforms.instagram.publicationIdsByShortcode);
 
     const comments = extractInstagramComments(
@@ -59,7 +56,6 @@ describe("debug instagram comments", () => {
 
     const pubs = send({ action: "GET_PUBLICATIONS" }) as any;
     console.log("commentsCount:", pubs.commentsCount);
-    console.log("all comments keys:", Object.keys(store.commentsByPublication));
     console.log("platform comments keys:", Object.keys(store.platforms.instagram.commentsByPublication));
 
     // If this is 0, we know the filter is blocking

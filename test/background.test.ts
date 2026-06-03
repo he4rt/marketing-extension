@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createStore, handleRuntimeMessage } from "../src/background/controller";
-import type { BackgroundStore } from "../src/shared/domain";
+import type { XStore } from "../src/shared/domain";
 import type { RuntimeMessage } from "../src/shared/messages";
 import {
   instagramChildCommentsPayload,
@@ -44,7 +44,8 @@ function capture(
   payload: unknown,
   pageUrl: string,
   timestamp = "2026-05-20T12:00:00.000Z",
-  provider: "instagram" | "x" = "x",
+  provider: "instagram" | "linkedin" | "x" = "x",
+  url?: string,
 ) {
   return harness.sendMessage({
     action: "CAPTURED_PAYLOAD",
@@ -53,6 +54,7 @@ function capture(
     payload,
     timestamp,
     pageUrl,
+    url,
   });
 }
 
@@ -94,10 +96,10 @@ describe("background controller", () => {
     capture(app, "UserTweets", userTweetsPayload, "https://x.com/He4rtDevs");
 
     const response = app.sendMessage({ action: "GET_TWEETS" }) as {
-      accountInfo: BackgroundStore["accountInfo"];
+      accountInfo: XStore["accountInfo"];
       lastUpdated: null | string;
       replyCount: number;
-      tweets: BackgroundStore["tweets"][string][];
+      tweets: XStore["tweets"][string][];
     };
     const tweetsById = Object.fromEntries(response.tweets.map((tweet) => [tweet.tweet_id, tweet]));
 
@@ -128,7 +130,7 @@ describe("background controller", () => {
     );
 
     const response = app.sendMessage({ action: "GET_TWEETS" }) as {
-      accountInfo: BackgroundStore["accountInfo"];
+      accountInfo: XStore["accountInfo"];
     };
 
     expect(response.accountInfo).toEqual({
@@ -164,7 +166,7 @@ describe("background controller", () => {
     );
 
     const exported = app.sendMessage({ action: "GET_EXPORT" }) as {
-      per_platform: { x: { engagers: { likes_by_tweet: BackgroundStore["favoriters"] } } };
+      per_platform: { x: { engagers: { likes_by_tweet: XStore["favoriters"] } } };
     };
 
     expect(exported.per_platform.x.engagers.likes_by_tweet["100"]).toHaveLength(2);
@@ -198,7 +200,7 @@ describe("background controller", () => {
       tweetCount: number;
     };
     const response = app.sendMessage({ action: "GET_TWEETS" }) as {
-      tweets: BackgroundStore["tweets"][string][];
+      tweets: XStore["tweets"][string][];
     };
 
     expect(setResponse.tweetCount).toBe(1);
@@ -339,7 +341,7 @@ describe("background controller", () => {
       meta: { profiles: Record<string, { username: string }> };
       per_platform: {
         instagram: {
-          content: Array<{ provider: string; shortcode?: string; type: string; publication_id: string; engagers: { likes: unknown[]; comments: Array<{ comment_id: string }> } }>;
+          content: Array<{ provider: string; shortcode?: string; type: string; publication_id: string; engagers: { likes: unknown[]; comments: Array<{ comment_id: string; replies: unknown[] }> } }>;
         };
         x: { content: unknown[] };
         linkedin: { content: unknown[] };
@@ -432,7 +434,7 @@ describe("background controller", () => {
     const exported = app.sendMessage({ action: "GET_EXPORT" }) as {
       per_platform: {
         instagram: {
-          content: Array<{ publication_id: string; shortcode?: string; engagers: { likes: unknown[]; comments: Array<{ comment_id: string }> } }>;
+          content: Array<{ publication_id: string; shortcode?: string; engagers: { likes: unknown[]; comments: Array<{ comment_id: string; replies: unknown[] }> } }>;
         };
       };
     };
