@@ -77,6 +77,8 @@ function switchTab(tabId: string) {
   if (tabId === "all") loadAllSummary();
   else if (tabId === "config") loadHandles();
   else loadPlatformData(tabId as SocialProvider);
+
+  renderCollectionTarget();
 }
 
 function autoSelectTab() {
@@ -114,14 +116,22 @@ function providerFromUrl(url: string): null | SocialProvider {
   return null;
 }
 
+// Estado da última detecção (da aba do BROWSER ativa). O banner é global no popup, então
+// só o exibimos quando a aba do POPUP ativa é a do provider detectado — senão o "Perfil
+// detectado no X" apareceria também nas abas Instagram/LinkedIn/Resumo/Config.
+let detectedTarget: { handles: HandlesMap; provider: SocialProvider; target: string } | null = null;
+
+function activePopupTab(): null | string {
+  return (document.querySelector(".tab.active") as HTMLElement | null)?.dataset.tab ?? null;
+}
+
 function suggestCollectionTarget() {
-  const banner = document.getElementById("collectionTarget");
-  if (!banner) return;
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     const url = tabs[0]?.url;
     const provider = url ? providerFromUrl(url) : null;
     if (!url || !provider) {
-      banner.classList.add("hidden");
+      detectedTarget = null;
+      renderCollectionTarget();
       return;
     }
     chrome.runtime.sendMessage(
@@ -129,13 +139,15 @@ function suggestCollectionTarget() {
       (res: { mode: string; target: null | string } | undefined) => {
         const target = res?.target ?? null;
         if (!target) {
-          banner.classList.add("hidden");
+          detectedTarget = null;
+          renderCollectionTarget();
           return;
         }
         chrome.runtime.sendMessage(
           { action: "GET_HANDLES" },
           (handlesRes: { handles: HandlesMap } | undefined) => {
-            renderCollectionTarget(banner, provider, target, handlesRes?.handles || {});
+            detectedTarget = { provider, target, handles: handlesRes?.handles || {} };
+            renderCollectionTarget();
           },
         );
       },
@@ -143,12 +155,15 @@ function suggestCollectionTarget() {
   });
 }
 
-function renderCollectionTarget(
-  banner: HTMLElement,
-  provider: SocialProvider,
-  target: string,
-  handles: HandlesMap,
-) {
+function renderCollectionTarget() {
+  const banner = document.getElementById("collectionTarget");
+  if (!banner) return;
+  // Só exibe na aba do popup correspondente ao provider detectado.
+  if (!detectedTarget || activePopupTab() !== detectedTarget.provider) {
+    banner.classList.add("hidden");
+    return;
+  }
+  const { provider, target, handles } = detectedTarget;
   const meta = TABS.find((t) => t.provider === provider);
   const label = meta?.name ?? provider;
   const color = meta?.color ?? "#888";
