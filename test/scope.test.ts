@@ -114,3 +114,45 @@ describe("scope 'profile' selects() — organization name substring (LinkedIn)",
     expect(mode.selects(pub, "Other Company")).toBe(false);
   });
 });
+
+describe("scope 'profile' detectFromPage — extrai o alvo da URL (X / Instagram)", () => {
+  const xProfile = profileMode(xScopeModes);
+  const igProfile = profileMode(instagramScopeModes);
+
+  test("X e Instagram declaram detectFromPage", () => {
+    expect(typeof xProfile.detectFromPage).toBe("function");
+    expect(typeof igProfile.detectFromPage).toBe("function");
+  });
+
+  test("X: detecta o handle em x.com/<handle>", () => {
+    expect(xProfile.detectFromPage?.("https://x.com/He4rtDevs")).toBe("He4rtDevs");
+    expect(xProfile.detectFromPage?.("https://twitter.com/He4rtDevs/")).toBe("He4rtDevs");
+  });
+
+  test("X: retorna null para URLs que não são perfil", () => {
+    for (const url of [
+      "https://x.com/home",
+      "https://x.com/explore",
+      "https://x.com/search?q=he4rt",
+      "https://x.com/He4rtDevs/status/100",
+      "https://x.com/i/timeline",
+    ]) {
+      expect(xProfile.detectFromPage?.(url)).toBeNull();
+    }
+  });
+
+  test("Instagram: detecta o username em instagram.com/<username>", () => {
+    expect(igProfile.detectFromPage?.("https://www.instagram.com/he4rtdevs/")).toBe("he4rtdevs");
+  });
+
+  test("Instagram: retorna null para posts/reels/explore/stories", () => {
+    for (const url of [
+      "https://www.instagram.com/p/ABC123/",
+      "https://www.instagram.com/reel/REEL456/",
+      "https://www.instagram.com/explore/",
+      "https://www.instagram.com/stories/he4rt/",
+    ]) {
+      expect(igProfile.detectFromPage?.(url)).toBeNull();
+    }
+  });
+});

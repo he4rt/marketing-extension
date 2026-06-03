@@ -32,6 +32,16 @@ export function publicationKey(provider: SocialProvider, publicationId: string) 
   return `${provider}:${publicationId}`;
 }
 
+// Segmentos do path de uma URL (sem vazios). Usado pelo detectFromPage dos scopeModes (#9)
+// para extrair o alvo de coleta a partir da URL da página. Retorna [] se a URL for inválida.
+export function pathSegments(pageUrl: string): string[] {
+  try {
+    return new URL(pageUrl).pathname.split("/").filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
 export function compactText(value: unknown) {
   return typeof value === "string" ? value : "";
 }

@@ -66,8 +66,9 @@ export function recordProvenance(
   mode: string,
   value: string,
 ) {
-  const map = (store.provenance[provider] ??= {});
+  const map = store.provenance[provider] ?? {};
   map[publicationKey(provider, publicationId)] = { mode, value };
+  store.provenance[provider] = map;
 }
 
 export function storePublication(store: BackgroundStore, publication: SocialPublication) {

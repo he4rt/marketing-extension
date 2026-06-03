@@ -12,7 +12,7 @@ import type {
 } from "../../shared/domain";
 import type { CapturedPayloadMessage } from "../../shared/messages";
 import type { BackgroundProviderFacet, ScopeMode } from "../contract";
-import { publicationKey } from "../shared/utils";
+import { pathSegments, publicationKey } from "../shared/utils";
 import {
   accountInfoFromUser,
   accountInfoToTrackedProfile,
@@ -133,6 +133,25 @@ export const scopeModes: ScopeMode[] = [
     id: "profile",
     label: "Profile",
     selects: isXProfilePublication,
+    // Extrai o handle da URL de um perfil do X: x.com/<handle> (1 segmento, fora dos
+    // caminhos reservados). URLs que não são perfil (status, search, home…) → null.
+    detectFromPage: (pageUrl) => {
+      const seg = pathSegments(pageUrl);
+      const candidate = seg.length === 1 ? seg[0] : undefined;
+      if (!candidate) return null;
+      const reserved = new Set([
+        "home",
+        "explore",
+        "search",
+        "notifications",
+        "messages",
+        "settings",
+        "i",
+        "compose",
+        "hashtag",
+      ]);
+      return reserved.has(candidate.toLowerCase()) ? null : candidate;
+    },
   },
 ];
 
