@@ -434,4 +434,5 @@ export const scopeModes: ScopeMode[] = [
 export const instagramProvider: BackgroundProviderFacet = {
   id: "instagram",
   processCapture: processInstagramCapture,
+  scopeModes,
 };

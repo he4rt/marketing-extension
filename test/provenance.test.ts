@@ -114,3 +114,23 @@ describe("scope provenance (#9) — gravada na captura", () => {
     }
   });
 });
+
+describe("scope collection target (#9) — DETECT_TARGET", () => {
+  test("detecta o alvo da URL de um perfil (X)", () => {
+    const res = sendTo(createStore())({
+      action: "DETECT_TARGET",
+      provider: "x",
+      pageUrl: "https://x.com/He4rtDevs",
+    });
+    expect(res).toEqual({ mode: "profile", target: "He4rtDevs" });
+  });
+
+  test("retorna target null em URL que não é perfil (Instagram)", () => {
+    const res = sendTo(createStore())({
+      action: "DETECT_TARGET",
+      provider: "instagram",
+      pageUrl: "https://www.instagram.com/p/ABC123/",
+    });
+    expect(res).toEqual({ mode: "profile", target: null });
+  });
+});

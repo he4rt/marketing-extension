@@ -762,5 +762,13 @@ export function handleRuntimeMessage(
     };
   }
 
+  if (request.action === "DETECT_TARGET") {
+    const profile = BACKGROUND_PROVIDERS[request.provider]?.scopeModes.find(
+      (mode) => mode.id === "profile",
+    );
+    const target = profile?.detectFromPage?.(request.pageUrl) ?? null;
+    return { mode: "profile", target };
+  }
+
   return undefined;
 }

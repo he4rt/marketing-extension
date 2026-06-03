@@ -57,6 +57,7 @@ document.addEventListener("DOMContentLoaded", () => {
   setupButtons();
   setupListeners();
   autoSelectTab();
+  suggestCollectionTarget();
 });
 
 const HOST_TAB_MAP: Array<{ host: string; tab: string }> = PROVIDER_METAS.flatMap((meta) =>
@@ -92,6 +93,85 @@ function autoSelectTab() {
       }
     }
     switchTab("all");
+  });
+}
+
+// === Collection Target (#9) ===
+// Sugere o alvo de coleta a partir da URL da aba ativa: pergunta ao background
+// (DETECT_TARGET → detectFromPage do scopeModes.profile) e mostra um banner com o perfil
+// detectado + botão para rastrear. Profile-only por enquanto (único modo).
+
+const HANDLE_INPUT_IDS: Record<string, string> = {
+  x: "handleX",
+  instagram: "handleIg",
+  linkedin: "handleLi",
+};
+
+function providerFromUrl(url: string): null | SocialProvider {
+  for (const { host, tab } of HOST_TAB_MAP) {
+    if (url.includes(host)) return tab as SocialProvider;
+  }
+  return null;
+}
+
+function suggestCollectionTarget() {
+  const banner = document.getElementById("collectionTarget");
+  if (!banner) return;
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    const url = tabs[0]?.url;
+    const provider = url ? providerFromUrl(url) : null;
+    if (!url || !provider) {
+      banner.classList.add("hidden");
+      return;
+    }
+    chrome.runtime.sendMessage(
+      { action: "DETECT_TARGET", provider, pageUrl: url },
+      (res: { mode: string; target: null | string } | undefined) => {
+        const target = res?.target ?? null;
+        if (!target) {
+          banner.classList.add("hidden");
+          return;
+        }
+        chrome.runtime.sendMessage(
+          { action: "GET_HANDLES" },
+          (handlesRes: { handles: HandlesMap } | undefined) => {
+            renderCollectionTarget(banner, provider, target, handlesRes?.handles || {});
+          },
+        );
+      },
+    );
+  });
+}
+
+function renderCollectionTarget(
+  banner: HTMLElement,
+  provider: SocialProvider,
+  target: string,
+  handles: HandlesMap,
+) {
+  const meta = TABS.find((t) => t.provider === provider);
+  const label = meta?.name ?? provider;
+  const color = meta?.color ?? "#888";
+  const tracked = (handles[provider] || "").toLowerCase() === target.toLowerCase();
+  const safeTarget = escapeHtml(target);
+  banner.classList.remove("hidden");
+
+  if (tracked) {
+    banner.innerHTML = `<span class="ct-dot" style="background:${color}"></span><span class="ct-text">Coletando <strong>${safeTarget}</strong> no ${label} · modo Profile</span>`;
+    return;
+  }
+
+  banner.innerHTML = `<span class="ct-dot" style="background:${color}"></span><span class="ct-text">Perfil detectado: <strong>${safeTarget}</strong></span><button id="ctTrackBtn" class="btn btn-xs" type="button">Rastrear</button>`;
+  document.getElementById("ctTrackBtn")?.addEventListener("click", () => {
+    const merged: HandlesMap = { ...handles, [provider]: target };
+    chrome.runtime.sendMessage({ action: "SET_HANDLES", handles: merged }, () => {
+      const input = document.getElementById(
+        HANDLE_INPUT_IDS[provider] || "",
+      ) as HTMLInputElement | null;
+      if (input) input.value = target;
+      suggestCollectionTarget();
+      loadPlatformData(provider);
+    });
   });
 }
 
@@ -139,9 +219,15 @@ function setupListeners() {
     }
   });
 
-  chrome.tabs.onActivated?.addListener(() => autoSelectTab());
+  chrome.tabs.onActivated?.addListener(() => {
+    autoSelectTab();
+    suggestCollectionTarget();
+  });
   chrome.tabs.onUpdated?.addListener((_tabId, changeInfo) => {
-    if (changeInfo.status === "complete" || changeInfo.url) autoSelectTab();
+    if (changeInfo.status === "complete" || changeInfo.url) {
+      autoSelectTab();
+      suggestCollectionTarget();
+    }
   });
 }
 

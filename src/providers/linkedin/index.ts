@@ -408,4 +408,5 @@ export const scopeModes: ScopeMode[] = [
 export const linkedinProvider: BackgroundProviderFacet = {
   id: "linkedin",
   processCapture: processLinkedInCapture,
+  scopeModes,
 };

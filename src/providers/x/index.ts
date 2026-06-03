@@ -158,4 +158,5 @@ export const scopeModes: ScopeMode[] = [
 export const xProvider: BackgroundProviderFacet = {
   id: "x",
   processCapture: processXCapture,
+  scopeModes,
 };

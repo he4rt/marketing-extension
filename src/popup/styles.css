@@ -423,3 +423,36 @@ body {
   overflow-y: auto;
   max-height: 430px;
 }
+
+/* Collection Target (#9) — banner do alvo de coleta detectado da aba ativa */
+.collection-target {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 12px 8px;
+  padding: 8px 12px;
+  background: rgba(231, 233, 234, 0.04);
+  border: 1px solid rgba(231, 233, 234, 0.08);
+  border-radius: 12px;
+  font-size: 12px;
+}
+.collection-target.hidden {
+  display: none;
+}
+.ct-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+.ct-text {
+  flex: 1;
+  color: #c9d1d9;
+}
+.ct-text strong {
+  color: #fff;
+}
+.btn-xs {
+  padding: 4px 12px;
+  font-size: 11px;
+}
