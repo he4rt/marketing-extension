@@ -325,22 +325,6 @@ carregando `dist/chrome` no Chrome e navegando. Mudanças nela exigem verificaç
 
 ---
 
-## Agent skills
-
-### Issue tracker
-
-Issues are tracked on GitHub (`he4rt/marketing-extension`). See `docs/agents/issue-tracker.md`.
-
-### Triage labels
-
-All five canonical labels use their default names. See `docs/agents/triage-labels.md`.
-
-### Domain docs
-
-Single-context repo — one `CONTEXT.md` + `docs/adr/` at the root. See `docs/agents/domain.md`.
-
----
-
 ## Referências
 
 - **[`docs/adr/0002-providers-plugaveis-ports-and-adapters.md`](docs/adr/0002-providers-plugaveis-ports-and-adapters.md)** — a decisão de arquitetura (ports & adapters + registry) e seus trade-offs.
