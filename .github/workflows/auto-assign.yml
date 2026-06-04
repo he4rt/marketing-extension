@@ -1,9 +1,10 @@
 name: Auto assign
 
 on:
-  # zizmor: ignore[dangerous-triggers] — não faz checkout, apenas atribui o autor via API
+  # zizmor: ignore[dangerous-triggers]
   pull_request_target:
-    types: [opened]
+    branches: [main]
+    types: [opened, reopened]
 
 permissions: {}
 
@@ -13,6 +14,7 @@ concurrency:
 
 jobs:
   assign:
+    if: github.repository == 'he4rt/marketing-extension'
     name: Atribuir autor
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -21,6 +23,7 @@ jobs:
 
     steps:
       - name: Atribuir autor da PR
+        if: github.event.pull_request.user.type == 'User'
         env:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ github.event.pull_request.html_url }}

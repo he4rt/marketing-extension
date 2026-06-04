@@ -13,6 +13,7 @@ concurrency:
 
 jobs:
   release:
+    if: github.repository == 'he4rt/marketing-extension'
     name: Build, validar e publicar
     runs-on: ubuntu-latest
     timeout-minutes: 10

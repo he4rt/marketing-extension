@@ -311,24 +311,39 @@ carregando `dist/chrome` no Chrome e navegando. Mudanças nela exigem verificaç
 
 ## CI — GitHub Actions
 
-O workflow **`Validar extensão`** (`.github/workflows/validate-extension.yml`) roda em
-todo PR e push para `main`. O job **`Validar build, testes e manifest`** executa:
+Dois workflows separados:
+
+**`CI`** (`.github/workflows/validate-extension.yml`) — roda em todo PR e push para
+`main`. Job **`Validar tipos, lint e testes`**:
 
 ```
-checkout → setup-bun (.bun-version) → cache node_modules → install →
-typecheck → validate (biome + manifest + testes) → build → package →
-upload-artifact (só em push/main e workflow_dispatch)
+checkout → setup-bun → cache → install → typecheck → biome check → bun test
 ```
 
-Políticas de segurança aplicadas:
+Não faz build — typecheck + lint + testes são suficientes para validação de PR.
+
+**`Release`** (`.github/workflows/release.yml`) — dispatch manual (`workflow_dispatch`).
+Job **`Build, validar e publicar`**:
+
+```
+checkout → CalVer → setup-bun → install → build (EXT_VERSION) →
+validate (manifest + arquivos) → package (.zip) → checksums → gh release create
+```
+
+A versão é CalVer (`YYYYMMDD.HHMMSS.git_short`). O manifest Chrome recebe uma versão
+numérica compatível (`YYYY.MDD.HMM`) via env var `EXT_VERSION`, e o label legível via
+`EXT_VERSION_NAME`. Sem env var, o build usa `1.0.0` (dev local).
+
+**Políticas de segurança** (ambos os workflows):
 
 - **Actions pinadas por SHA** (não por tag) — exigido pelo persona `auditor` do zizmor.
 - **`persist-credentials: false`** no checkout.
-- **Concurrency group** com `cancel-in-progress` para evitar runs duplicados em PRs.
+- **Concurrency group** com `cancel-in-progress` (CI) / sem cancel (Release).
+- **`permissions: {}`** no workflow level, permissões mínimas no job.
 - **Dependabot** (`.github/dependabot.yml`): PRs automáticos semanais para actions e
-  diários para npm, ambos com cooldown de 7 dias e timezone `America/Sao_Paulo`.
+  diários para bun, ambos com cooldown de 7 dias e timezone `America/Sao_Paulo`.
 
-Para validar o workflow localmente: `uvx zizmor . --persona=auditor` (deve retornar 0
+Para validar os workflows localmente: `uvx zizmor . --persona=auditor` (deve retornar 0
 findings).
 
 A versão do Bun usada no CI vem do arquivo `.bun-version` na raiz (mantido em sincronia
@@ -349,7 +364,7 @@ com `.mise.toml`).
 | Mudar modelos de domínio | `shared/domain.ts` |
 | Mudar hosts/abas/manifest | `providers/meta.ts` |
 | Modo de coleta (perfil/hashtag/…) | `providers/<id>/index.ts` (`scopeModes`) + `contract.ts` |
-| Mudar o CI / workflow | `.github/workflows/validate-extension.yml` — actions devem ser pinadas por SHA |
+| Mudar o CI / workflow | `.github/workflows/validate-extension.yml` (CI) e `release.yml` (Release) — actions pinadas por SHA |
 | Atualizar versão do Bun | `.bun-version` (CI) + `.mise.toml` (local) — manter em sincronia |
 | Configurar Dependabot | `.github/dependabot.yml` |
 
