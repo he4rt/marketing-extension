@@ -77,16 +77,17 @@ Verifique se testes cobrem os fluxos afetados:
 Quando houver acesso ao ambiente local, rode:
 
 ```sh
-mise exec -- bun install --frozen-lockfile
-mise exec -- bun run typecheck
-mise exec -- bun test
-mise exec -- bun run build
-mise exec -- bun run validate
+bun install --frozen-lockfile
+bun run typecheck
+bun test
+bun run build
+bun run validate
 ```
 
 Se algum comando falhar, reporte o comando, o erro relevante e o impacto. Não esconda falhas como “provavelmente ambiente”.
 
-Na PR, procure também pelo workflow `Validar extensão`. Ele deve rodar validação equivalente em GitHub Actions quando permitido pelo GitHub.
+Na PR, verifique o status do check **`Validar build, testes e manifest`** no workflow
+`Validar extensão`. Ele roda automaticamente em todo PR e push para `main`.
 
 ## Critérios de Severidade
 
