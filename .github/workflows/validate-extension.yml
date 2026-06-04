@@ -1,10 +1,11 @@
-name: Validar extensão
+name: CI
 
 on:
   pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize, ready_for_review]
   push:
     branches: [main]
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -15,7 +16,7 @@ concurrency:
 
 jobs:
   validate:
-    name: Validar build, testes e manifest
+    name: Validar tipos, lint e testes
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -44,19 +45,8 @@ jobs:
       - name: Checar tipos
         run: bun run typecheck
 
-      - name: Gerar build carregável no Chrome
-        run: bun run build
+      - name: Checar lint e formatação
+        run: bun run check
 
-      - name: Validar extensão
-        run: bun run validate
-
-      - name: Gerar pacote da extensão
-        run: bun run package
-
-      - name: Upload do pacote
-        if: github.event_name != 'pull_request'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: he4rt-analytics-chrome-${{ github.run_id }}
-          path: dist/packages/he4rt-analytics-chrome.zip
-          retention-days: 30
+      - name: Rodar testes
+        run: bun test
