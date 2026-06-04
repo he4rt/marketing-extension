@@ -210,9 +210,10 @@ function buildLinkedInCommentWithReactions(
   }
 
   for (const c of items) {
-    const node = byId.get(c.comment_id)!;
+    const node = byId.get(c.comment_id);
+    if (!node) continue;
     if (c.parent_comment_id && byId.has(c.parent_comment_id)) {
-      byId.get(c.parent_comment_id)!.replies.push(node);
+      byId.get(c.parent_comment_id)?.replies.push(node);
     } else {
       roots.push(node);
     }
