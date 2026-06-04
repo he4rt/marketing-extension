@@ -44,11 +44,11 @@ jobs:
       - name: Checar tipos
         run: bun run typecheck
 
-      - name: Validar extensão
-        run: bun run validate
-
       - name: Gerar build carregável no Chrome
         run: bun run build
+
+      - name: Validar extensão
+        run: bun run validate
 
       - name: Gerar pacote da extensão
         run: bun run package

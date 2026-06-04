@@ -336,7 +336,8 @@ function buildCommentTree(comments: SocialComment[]): ExportComment[] {
   }
 
   for (const c of comments) {
-    const node = byId.get(c.comment_id)!;
+    const node = byId.get(c.comment_id);
+    if (!node) continue;
     if (c.parent_comment_id && byId.has(c.parent_comment_id)) {
       byId.get(c.parent_comment_id)?.replies.push(node);
     } else {
