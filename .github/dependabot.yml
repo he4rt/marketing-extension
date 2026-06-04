@@ -12,7 +12,7 @@ updates:
     commit-message:
       prefix: 'ci'
 
-  - package-ecosystem: 'npm'
+  - package-ecosystem: 'bun'
     directory: '/'
     open-pull-requests-limit: 10
     schedule:
