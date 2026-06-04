@@ -20,7 +20,8 @@ const manifest = {
   description: "Captura engajamento social da comunidade He4rt Developers",
   // "cookies": o SW lê o JSESSIONID (csrf) de linkedin.com para o replay credenciado do L3.
   // "sidePanel": a UI vive num side panel (substitui o popup) — clique no ícone abre o painel.
-  permissions: ["storage", "tabs", "unlimitedStorage", "cookies", "sidePanel"],
+  // "alarms": o scheduler de Active Fetch (AFK diário) acorda o SW via chrome.alarms.
+  permissions: ["storage", "tabs", "unlimitedStorage", "cookies", "sidePanel", "alarms"],
   host_permissions: hostPermissions,
   background: {
     service_worker: "background.js",

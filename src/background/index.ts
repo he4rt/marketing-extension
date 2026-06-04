@@ -1,5 +1,7 @@
 import type { BackgroundStore, EndpointStore, SocialProvider } from "../shared/domain";
 import type { RuntimeMessage } from "../shared/messages";
+import { getActiveFetchStrategy } from "../providers/active-fetch-registry";
+import { runActiveFetch } from "./active-fetch-scheduler";
 import { createStore, handleRuntimeMessage } from "./controller";
 
 const LOCAL_KEYS = {
@@ -11,6 +13,35 @@ const LOCAL_KEYS = {
 const SESSION_KEY = "he4rt_platforms";
 
 const store = createStore();
+
+if (chrome.alarms) {
+  chrome.runtime.onInstalled.addListener(() => {
+    chrome.alarms.create("devto-afk", { periodInMinutes: 1440 });
+  });
+
+  chrome.alarms.onAlarm.addListener(async (alarm) => {
+    if (alarm.name !== "devto-afk") return;
+    const strategy = getActiveFetchStrategy("devto");
+    if (!strategy) return;
+    const result = await chrome.storage.local.get("devtoApiKey");
+    const apiKey = (result.devtoApiKey as string | undefined) ?? null;
+    await runActiveFetch({
+      strategy,
+      apiKey,
+      mode: "afk",
+      onCapture: (endpoint, payload) => {
+        handleRuntimeMessage(store, {
+          action: "CAPTURED_PAYLOAD",
+          provider: "devto",
+          endpoint,
+          payload,
+          pageUrl: "https://dev.to",
+          timestamp: new Date().toISOString(),
+        });
+      },
+    });
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Hydration: load from both storage areas
@@ -130,6 +161,36 @@ chrome.runtime.onMessage.addListener((request: RuntimeMessage, _sender, sendResp
       ? chrome.storage.local.set({ devtoApiKey: apiKey })
       : chrome.storage.local.remove("devtoApiKey");
     op.then(() => sendResponse({ ok: true }));
+    return true;
+  }
+
+  if (request.action === "RUN_ACTIVE_FETCH") {
+    const provider = request.provider;
+    chrome.storage.local.get("devtoApiKey").then(async (result) => {
+      const apiKey = (result.devtoApiKey as string | undefined) ?? null;
+      const strategy = getActiveFetchStrategy(provider);
+      if (!strategy) {
+        sendResponse({ collected: 0, articles: 0, reactions: 0 });
+        return;
+      }
+      const status = await runActiveFetch({
+        strategy,
+        apiKey,
+        mode: "onDemand",
+        onCapture: (endpoint, payload) => {
+          handleRuntimeMessage(store, {
+            action: "CAPTURED_PAYLOAD",
+            provider,
+            endpoint,
+            payload,
+            pageUrl: "https://dev.to",
+            timestamp: new Date().toISOString(),
+          });
+        },
+      });
+      persistSession();
+      sendResponse(status);
+    });
     return true;
   }
 
