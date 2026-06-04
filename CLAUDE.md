@@ -309,6 +309,33 @@ carregando `dist/chrome` no Chrome e navegando. Mudanças nela exigem verificaç
 
 ---
 
+## CI — GitHub Actions
+
+O workflow **`Validar extensão`** (`.github/workflows/validate-extension.yml`) roda em
+todo PR e push para `main`. O job **`Validar build, testes e manifest`** executa:
+
+```
+checkout → setup-bun (.bun-version) → cache node_modules → install →
+typecheck → validate (biome + manifest + testes) → build → package →
+upload-artifact (só em push/main e workflow_dispatch)
+```
+
+Políticas de segurança aplicadas:
+
+- **Actions pinadas por SHA** (não por tag) — exigido pelo persona `auditor` do zizmor.
+- **`persist-credentials: false`** no checkout.
+- **Concurrency group** com `cancel-in-progress` para evitar runs duplicados em PRs.
+- **Dependabot** (`.github/dependabot.yml`): PRs automáticos semanais para actions e
+  diários para npm, ambos com cooldown de 7 dias e timezone `America/Sao_Paulo`.
+
+Para validar o workflow localmente: `uvx zizmor . --persona=auditor` (deve retornar 0
+findings).
+
+A versão do Bun usada no CI vem do arquivo `.bun-version` na raiz (mantido em sincronia
+com `.mise.toml`).
+
+---
+
 ## Onde mexer para…
 
 | Quero… | Mexa em |
@@ -322,6 +349,9 @@ carregando `dist/chrome` no Chrome e navegando. Mudanças nela exigem verificaç
 | Mudar modelos de domínio | `shared/domain.ts` |
 | Mudar hosts/abas/manifest | `providers/meta.ts` |
 | Modo de coleta (perfil/hashtag/…) | `providers/<id>/index.ts` (`scopeModes`) + `contract.ts` |
+| Mudar o CI / workflow | `.github/workflows/validate-extension.yml` — actions devem ser pinadas por SHA |
+| Atualizar versão do Bun | `.bun-version` (CI) + `.mise.toml` (local) — manter em sincronia |
+| Configurar Dependabot | `.github/dependabot.yml` |
 
 ---
 

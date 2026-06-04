@@ -170,10 +170,9 @@ describe("background controller", () => {
     };
 
     expect(exported.per_platform.x.engagers.likes_by_tweet["100"]).toHaveLength(2);
-    expect(exported.per_platform.x.engagers.likes_by_tweet["100"]?.map((user) => user.screen_name)).toEqual([
-      "first_fan",
-      "second_fan",
-    ]);
+    expect(
+      exported.per_platform.x.engagers.likes_by_tweet["100"]?.map((user) => user.screen_name),
+    ).toEqual(["first_fan", "second_fan"]);
     expect(exported.per_platform.x.engagers.likes_by_tweet["100"]?.[0]?.followers_count).toBe(1000);
     expect(exported.per_platform.x.engagers.likes_by_tweet["100"]?.[0]?.following).toBe(true);
   });
@@ -242,11 +241,41 @@ describe("background controller", () => {
     const exported = app.sendMessage({ action: "GET_EXPORT" }) as {
       meta: { profiles: Record<string, { username: string }> };
       per_platform: {
-        x: { content: Array<{ tweet_id: string }>; engagers: { replies: unknown[]; likes_by_tweet: Record<string, unknown[]> } };
-        instagram: { content: Array<{ publication_id: string; engagers: { likes: unknown[]; comments: unknown[] } }> };
-        linkedin: { content: Array<{ id: string; engagers: unknown; engagement_metrics: unknown }> };
+        x: {
+          content: Array<{ tweet_id: string }>;
+          engagers: { replies: unknown[]; likes_by_tweet: Record<string, unknown[]> };
+        };
+        instagram: {
+          content: Array<{
+            publication_id: string;
+            engagers: { likes: unknown[]; comments: unknown[] };
+          }>;
+        };
+        linkedin: {
+          content: Array<{ id: string; engagers: unknown; engagement_metrics: unknown }>;
+        };
       };
-      unified: { summary: { all: { total_content: number; total_likes: number; total_comments: number; unique_engagers: number }; by_platform: { x: { total_content: number; total_likes: number; total_retweets: number; total_replies: number; total_quotes: number; total_bookmarks: number; total_views: number } } } };
+      unified: {
+        summary: {
+          all: {
+            total_content: number;
+            total_likes: number;
+            total_comments: number;
+            unique_engagers: number;
+          };
+          by_platform: {
+            x: {
+              total_content: number;
+              total_likes: number;
+              total_retweets: number;
+              total_replies: number;
+              total_quotes: number;
+              total_bookmarks: number;
+              total_views: number;
+            };
+          };
+        };
+      };
     };
 
     expect(Object.keys(endpoints.endpoints).sort()).toEqual(["x:Favoriters", "x:UserTweets"]);
@@ -254,7 +283,7 @@ describe("background controller", () => {
     expect(userTweetPayloads.payloads).toHaveLength(1);
     expect(allRaw.endpoints["x:Favoriters"]?.count).toBe(1);
 
-    expect(exported.meta.profiles.x!.username).toBe("He4rtDevs");
+    expect(exported.meta.profiles.x?.username).toBe("He4rtDevs");
     expect(exported.unified.summary.all.total_content).toBe(5);
     expect(exported.per_platform.x.content).toHaveLength(4);
     expect(exported.per_platform.x.engagers.replies).toHaveLength(1);
@@ -341,15 +370,36 @@ describe("background controller", () => {
       meta: { profiles: Record<string, { username: string }> };
       per_platform: {
         instagram: {
-          content: Array<{ provider: string; shortcode?: string; type: string; publication_id: string; engagers: { likes: unknown[]; comments: Array<{ comment_id: string; replies: unknown[] }> } }>;
+          content: Array<{
+            provider: string;
+            shortcode?: string;
+            type: string;
+            publication_id: string;
+            engagers: {
+              likes: unknown[];
+              comments: Array<{ comment_id: string; replies: unknown[] }>;
+            };
+          }>;
         };
         x: { content: unknown[] };
         linkedin: { content: unknown[] };
       };
       unified: {
         summary: {
-          all: { total_content: number; total_likes: number; total_comments: number; unique_engagers: number };
-          by_platform: { instagram: { total_content: number; total_comments: number; total_likes: number; total_views: number } };
+          all: {
+            total_content: number;
+            total_likes: number;
+            total_comments: number;
+            unique_engagers: number;
+          };
+          by_platform: {
+            instagram: {
+              total_content: number;
+              total_comments: number;
+              total_likes: number;
+              total_views: number;
+            };
+          };
         };
       };
     };
@@ -367,8 +417,8 @@ describe("background controller", () => {
     expect(response.engagementsCount).toBe(4);
 
     expect(exported.meta.profiles.instagram?.username).toBe("he4rtdevs");
-    expect(exported.unified.summary.by_platform.instagram!.total_content).toBe(3);
-    expect(exported.unified.summary.by_platform.instagram!.total_comments).toBe(2);
+    expect(exported.unified.summary.by_platform.instagram?.total_content).toBe(3);
+    expect(exported.unified.summary.by_platform.instagram?.total_comments).toBe(2);
 
     const igPost = exported.per_platform.instagram.content.find((p) => p.shortcode === "ABC123");
     expect(igPost?.engagers.comments).toHaveLength(1);
@@ -403,7 +453,16 @@ describe("background controller", () => {
     );
 
     const exported = app.sendMessage({ action: "GET_EXPORT" }) as {
-      unified: { summary: { all: { total_content: number; total_likes: number; total_comments: number; unique_engagers: number } } };
+      unified: {
+        summary: {
+          all: {
+            total_content: number;
+            total_likes: number;
+            total_comments: number;
+            unique_engagers: number;
+          };
+        };
+      };
     };
 
     expect(exported.unified.summary.all.total_content).toBe(0);
@@ -434,14 +493,22 @@ describe("background controller", () => {
     const exported = app.sendMessage({ action: "GET_EXPORT" }) as {
       per_platform: {
         instagram: {
-          content: Array<{ publication_id: string; shortcode?: string; engagers: { likes: unknown[]; comments: Array<{ comment_id: string; replies: unknown[] }> } }>;
+          content: Array<{
+            publication_id: string;
+            shortcode?: string;
+            engagers: {
+              likes: unknown[];
+              comments: Array<{ comment_id: string; replies: unknown[] }>;
+            };
+          }>;
         };
       };
     };
 
     expect(
-      exported.per_platform.instagram.content.find((publication) => publication.shortcode === "POSTSSR")
-        ?.publication_id,
+      exported.per_platform.instagram.content.find(
+        (publication) => publication.shortcode === "POSTSSR",
+      )?.publication_id,
     ).toBe("394");
     const ssrPost = exported.per_platform.instagram.content.find((p) => p.shortcode === "POSTSSR");
     expect(ssrPost?.engagers.comments).toHaveLength(1);
@@ -749,9 +816,28 @@ describe("background controller", () => {
           }>;
         };
       };
-      unified: { summary: { all: { total_content: number; total_likes: number; total_comments: number; unique_engagers: number }; by_platform: { instagram: { total_content: number; total_comments: number; total_likes: number; total_views: number } } } };
+      unified: {
+        summary: {
+          all: {
+            total_content: number;
+            total_likes: number;
+            total_comments: number;
+            unique_engagers: number;
+          };
+          by_platform: {
+            instagram: {
+              total_content: number;
+              total_comments: number;
+              total_likes: number;
+              total_views: number;
+            };
+          };
+        };
+      };
     };
-    const igPost = exported.per_platform.instagram.content.find((p) => p.shortcode === "DY2ywueFXAj");
+    const igPost = exported.per_platform.instagram.content.find(
+      (p) => p.shortcode === "DY2ywueFXAj",
+    );
     const comments = igPost?.engagers.comments || [];
 
     expect(comments).toHaveLength(1);
@@ -766,7 +852,7 @@ describe("background controller", () => {
       text: "@teamfighttacticsbrasil o top1 hoje tem nome e sobrenome 🤝",
     });
     expect(exported.unified.summary.all.total_comments).toBe(2);
-    expect(exported.unified.summary.by_platform.instagram!.total_comments).toBe(2);
+    expect(exported.unified.summary.by_platform.instagram?.total_comments).toBe(2);
     const raw = app.sendMessage({ action: "GET_RAW_PAYLOADS", provider: "instagram" }) as {
       endpoints: Record<string, { count: number }>;
     };
@@ -799,14 +885,33 @@ describe("background controller", () => {
           content: Array<{
             shortcode?: string;
             publication_id: string;
-            engagers: { likes: unknown[]; comments: Array<{ comment_id: string; text: string; replies: Array<{ comment_id: string; text: string }> }> };
+            engagers: {
+              likes: unknown[];
+              comments: Array<{
+                comment_id: string;
+                text: string;
+                replies: Array<{ comment_id: string; text: string }>;
+              }>;
+            };
           }>;
         };
       };
       unified: {
         summary: {
-          all: { total_content: number; total_likes: number; total_comments: number; unique_engagers: number };
-          by_platform: { instagram: { total_content: number; total_comments: number; total_likes: number; total_views: number } };
+          all: {
+            total_content: number;
+            total_likes: number;
+            total_comments: number;
+            unique_engagers: number;
+          };
+          by_platform: {
+            instagram: {
+              total_content: number;
+              total_comments: number;
+              total_likes: number;
+              total_views: number;
+            };
+          };
         };
       };
     };
@@ -820,7 +925,7 @@ describe("background controller", () => {
     });
     expect(comments?.[0]?.replies).toHaveLength(0);
     expect(exported.unified.summary.all.total_comments).toBe(1);
-    expect(exported.unified.summary.by_platform.instagram!.total_comments).toBe(1);
+    expect(exported.unified.summary.by_platform.instagram?.total_comments).toBe(1);
   });
 
   test("migra comentários DOM visíveis quando o payload real resolve o shortcode do Instagram", () => {
@@ -881,7 +986,16 @@ describe("background controller", () => {
           }>;
         };
       };
-      unified: { summary: { all: { total_content: number; total_likes: number; total_comments: number; unique_engagers: number } } };
+      unified: {
+        summary: {
+          all: {
+            total_content: number;
+            total_likes: number;
+            total_comments: number;
+            unique_engagers: number;
+          };
+        };
+      };
     };
 
     // After SSR: publication created, DOM comments migrated

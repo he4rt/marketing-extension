@@ -14,7 +14,9 @@ function vectorImage(seg, width = 400, height = 400) {
 }
 
 function profilePicture(seg) {
-  return { attributes: [{ detailData: { nonEntityProfilePicture: { vectorImage: vectorImage(seg) } } }] };
+  return {
+    attributes: [{ detailData: { nonEntityProfilePicture: { vectorImage: vectorImage(seg) } } }],
+  };
 }
 
 // ---- feedDashOrganizationalPageUpdates ----------------------------------

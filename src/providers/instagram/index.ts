@@ -20,6 +20,7 @@ import type {
   SocialPublication,
 } from "../../shared/domain";
 import type { CapturedPayloadMessage, VisibleCommentsMessage } from "../../shared/messages";
+import { sortPublications } from "../../shared/sort";
 import type { BackgroundProviderFacet, ScopeMode } from "../contract";
 import { pathSegments, publicationKey } from "../shared/utils";
 import {
@@ -28,21 +29,6 @@ import {
   extractInstagramPublications,
   profileFromPublication,
 } from "./parser";
-
-function sortPublications(publications: SocialPublication[]) {
-  return publications.sort((a, b) => {
-    const orderA = a.capture_order || Number.MAX_SAFE_INTEGER;
-    const orderB = b.capture_order || Number.MAX_SAFE_INTEGER;
-    const visibleA = a.visible_order ?? Number.MAX_SAFE_INTEGER;
-    const visibleB = b.visible_order ?? Number.MAX_SAFE_INTEGER;
-    if (visibleA !== visibleB) return visibleA - visibleB;
-    const priorityA = a.capture_priority ?? 100;
-    const priorityB = b.capture_priority ?? 100;
-    if (priorityA !== priorityB) return priorityA - priorityB;
-    if (orderA !== orderB) return orderA - orderB;
-    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-  });
-}
 
 function instagramShortcodeFromUrl(pageUrl?: string) {
   if (!pageUrl) return "";
@@ -350,9 +336,10 @@ function buildCommentTree(comments: SocialComment[]): ExportComment[] {
   }
 
   for (const c of comments) {
-    const node = byId.get(c.comment_id)!;
+    const node = byId.get(c.comment_id);
+    if (!node) continue;
     if (c.parent_comment_id && byId.has(c.parent_comment_id)) {
-      byId.get(c.parent_comment_id)!.replies.push(node);
+      byId.get(c.parent_comment_id)?.replies.push(node);
     } else {
       roots.push(node);
     }

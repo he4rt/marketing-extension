@@ -1,3 +1,4 @@
+import type { BackgroundProviderFacet } from "../providers/contract";
 import {
   buildPlatformDataInstagram,
   computeSummaryInstagram,
@@ -21,7 +22,6 @@ import type {
   LinkedInStore,
   NormalizedStore,
   SocialProvider,
-  SocialPublication,
   XStore,
 } from "../shared/domain";
 import type {
@@ -29,7 +29,7 @@ import type {
   RuntimeMessage,
   VisibleCommentsMessage,
 } from "../shared/messages";
-import type { BackgroundProviderFacet } from "../providers/contract";
+import { sortPublications } from "../shared/sort";
 import { recordRawPayload, storePublication } from "./store";
 
 export type MessageContext = {
@@ -203,21 +203,6 @@ function activateContext(
   store.activeProvider = provider;
   if (provider && pageUrl) store.providerPageUrls[provider] = pageUrl;
   store.lastUpdated = new Date().toISOString();
-}
-
-function sortPublications(publications: SocialPublication[]) {
-  return publications.sort((a, b) => {
-    const orderA = a.capture_order || Number.MAX_SAFE_INTEGER;
-    const orderB = b.capture_order || Number.MAX_SAFE_INTEGER;
-    const visibleA = a.visible_order ?? Number.MAX_SAFE_INTEGER;
-    const visibleB = b.visible_order ?? Number.MAX_SAFE_INTEGER;
-    if (visibleA !== visibleB) return visibleA - visibleB;
-    const priorityA = a.capture_priority ?? 100;
-    const priorityB = b.capture_priority ?? 100;
-    if (priorityA !== priorityB) return priorityA - priorityB;
-    if (orderA !== orderB) return orderA - orderB;
-    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-  });
 }
 
 function reprocessPayloads(store: BackgroundStore) {

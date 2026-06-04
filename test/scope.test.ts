@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import type { ScopeMode } from "../src/providers/contract";
 import { instagramProvider, scopeModes as instagramScopeModes } from "../src/providers/instagram";
 import { linkedinProvider, scopeModes as linkedinScopeModes } from "../src/providers/linkedin";
-import type { ScopeMode } from "../src/providers/contract";
-import { scopeModes as xScopeModes, xProvider } from "../src/providers/x";
+import { xProvider, scopeModes as xScopeModes } from "../src/providers/x";
 import type { SocialProvider, SocialPublication } from "../src/shared/domain";
 
 // Cobre o seam de Scope (#9): cada provider DECLARA o modo "profile" e a predicate

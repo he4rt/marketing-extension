@@ -1,3 +1,4 @@
+import { PROVIDER_METAS } from "../providers/meta";
 import type {
   EndpointStore,
   ExportJSON,
@@ -7,7 +8,7 @@ import type {
   SocialProvider,
   SocialPublication,
 } from "../shared/domain";
-import { PROVIDER_METAS } from "../providers/meta";
+import { sortPublications } from "../shared/sort";
 
 type ProviderData = {
   publications: Record<string, SocialPublication>;
@@ -545,21 +546,6 @@ function escapeHtml(s: string) {
   const d = document.createElement("div");
   d.textContent = s;
   return d.innerHTML;
-}
-
-function sortPublications(publications: SocialPublication[]) {
-  return publications.sort((a, b) => {
-    const orderA = a.capture_order || Number.MAX_SAFE_INTEGER;
-    const orderB = b.capture_order || Number.MAX_SAFE_INTEGER;
-    const visibleA = a.visible_order ?? Number.MAX_SAFE_INTEGER;
-    const visibleB = b.visible_order ?? Number.MAX_SAFE_INTEGER;
-    if (visibleA !== visibleB) return visibleA - visibleB;
-    const priorityA = a.capture_priority ?? 100;
-    const priorityB = b.capture_priority ?? 100;
-    if (priorityA !== priorityB) return priorityA - priorityB;
-    if (orderA !== orderB) return orderA - orderB;
-    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-  });
 }
 
 function getExportBtn(prefix: string): HTMLButtonElement {
