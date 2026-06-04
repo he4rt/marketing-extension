@@ -95,9 +95,12 @@ function reaction(urn, memberId, name, seg) {
   return {
     entityUrn: urn,
     $type: "com.linkedin.voyager.dash.social.Reaction",
+    reactionType: "LIKE",
     preDashEntityUrn: `urn:li:member:${memberId}`,
     reactorLockup: {
       title: { text: name },
+      subtitle: { text: "Software Engineer at He4rt" },
+      navigationUrl: "https://www.linkedin.com/in/" + name.toLowerCase().replace(/\s+/g, "-"),
       image: profilePicture(seg),
     },
   };
@@ -120,6 +123,12 @@ export const linkedinReactionsPayload = {
 export const linkedinReactionsUrl =
   "https://www.linkedin.com/voyager/api/graphql?queryId=voyagerSocialDashReactions.aaa&variables=(count:10,start:0,urn:urn:li:activity:111)";
 
+export const linkedinCommentReactionsUrl =
+  "https://www.linkedin.com/voyager/api/graphql?queryId=voyagerSocialDashReactions.aaa&variables=(count:10,start:0,threadUrn:urn:li:comment:(urn:li:member:777,urn:li:activity:111))";
+
+export const linkedinReplyCommentReactionsUrl =
+  "https://www.linkedin.com/voyager/api/graphql?queryId=voyagerSocialDashReactions.aaa&variables=(count:10,start:0,threadUrn:urn:li:comment:(urn:li:company:123,urn:li:activity:111))";
+
 // ---- socialDashComments (comentário + reply) -----------------------------
 
 const replyComment = {
@@ -131,6 +140,7 @@ const replyComment = {
     image: profilePicture("he4rt.jpg"),
   },
   commentary: { text: "Valeu pelo apoio!" },
+  "*socialDetail": "urn:li:fsd_socialDetail:c1r1",
 };
 
 const rootComment = {
@@ -145,9 +155,36 @@ const rootComment = {
   "*socialDetail": "urn:li:fsd_socialDetail:c1",
 };
 
+const commentCounts = {
+  entityUrn: "urn:li:fsd_socialActivityCounts:c1",
+  numLikes: 28,
+  reactionTypeCounts: [
+    { reactionType: "LIKE", count: 24 },
+    { reactionType: "EMPATHY", count: 3 },
+    { reactionType: "PRAISE", count: 1 },
+  ],
+};
+
 const commentSocialDetail = {
   entityUrn: "urn:li:fsd_socialDetail:c1",
+  threadUrn: "urn:li:comment:(urn:li:member:777,urn:li:activity:111)",
+  "*totalSocialActivityCounts": "urn:li:fsd_socialActivityCounts:c1",
   comments: { "*elements": ["urn:li:fsd_comment:c1r1"] },
+};
+
+const replyCommentCounts = {
+  entityUrn: "urn:li:fsd_socialActivityCounts:c1r1",
+  numLikes: 5,
+  reactionTypeCounts: [
+    { reactionType: "LIKE", count: 4 },
+    { reactionType: "PRAISE", count: 1 },
+  ],
+};
+
+const replyCommentSocialDetail = {
+  entityUrn: "urn:li:fsd_socialDetail:c1r1",
+  threadUrn: "urn:li:comment:(urn:li:company:123,urn:li:activity:111)",
+  "*totalSocialActivityCounts": "urn:li:fsd_socialActivityCounts:c1r1",
 };
 
 export const linkedinCommentsPayload = {
@@ -158,7 +195,7 @@ export const linkedinCommentsPayload = {
       },
     },
   },
-  included: [rootComment, commentSocialDetail, replyComment],
+  included: [rootComment, commentSocialDetail, commentCounts, replyComment, replyCommentSocialDetail, replyCommentCounts],
 };
 
 export const linkedinCommentsUrl =

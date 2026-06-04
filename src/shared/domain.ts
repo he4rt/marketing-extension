@@ -5,11 +5,14 @@ export type SocialActor = {
   followers_count?: number;
   following?: boolean;
   full_name?: string;
+  headline?: string;
   is_private?: boolean;
   is_verified?: boolean;
   name: string;
+  navigation_url?: string;
   provider: SocialProvider;
   provider_user_id: string;
+  reaction_type?: string;
   username: string;
 };
 
@@ -84,9 +87,12 @@ export type SocialComment = {
   parent_comment_id: null | string;
   provider: SocialProvider;
   publication_id: string;
+  reaction_breakdown?: Record<string, number>;
   relative_created_at?: string;
   source?: string;
   text: string;
+  threadUrn?: string;
+  total_reactions?: number;
 };
 
 export type SocialEngagement = {
@@ -283,6 +289,7 @@ export type LinkedInRepostEntry = {
   urn?: string;
   name?: string;
   avatar_url?: string;
+  public_identifier?: string;
   profile_link?: string;
   // ACTOR_COMPONENT (reshared post)
   id?: string;
@@ -313,9 +320,10 @@ export type ExportComment = {
   text: string;
   created_at: string;
   like_count?: number;
-  reactions?: { total: number; types: { type: string; count: number }[] };
+  reaction_breakdown?: Record<string, number>;
   reaction_users?: SocialActor[];
   replies: ExportComment[];
+  total_reactions?: number;
 };
 
 export type ExportV3Meta = {

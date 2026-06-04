@@ -8,11 +8,13 @@ import {
   instagramSingleMediaPayload,
 } from "./fixtures/instagram-payloads";
 import {
+  linkedinCommentReactionsUrl,
   linkedinCommentsPayload,
   linkedinCommentsUrl,
   linkedinFeedPayload,
   linkedinReactionsPayload,
   linkedinReactionsUrl,
+  linkedinReplyCommentReactionsUrl,
   linkedinRepostsPayload,
   linkedinRepostsUrl,
 } from "./fixtures/linkedin-payloads";
@@ -100,6 +102,8 @@ describe("golden-master export v3", () => {
     send({ action: "SET_HANDLE", handle: "He4rt Developers", provider: "linkedin" });
     capture(send, { provider: "linkedin", endpoint: "feedDashOrganizationalPageUpdates", payload: linkedinFeedPayload, pageUrl: "https://www.linkedin.com/company/he4rt/" });
     capture(send, { provider: "linkedin", endpoint: "socialDashReactions", payload: linkedinReactionsPayload, pageUrl: "https://www.linkedin.com/company/he4rt/", url: linkedinReactionsUrl });
+    capture(send, { provider: "linkedin", endpoint: "socialDashReactions", payload: linkedinReactionsPayload, pageUrl: "https://www.linkedin.com/company/he4rt/", url: linkedinCommentReactionsUrl });
+    capture(send, { provider: "linkedin", endpoint: "socialDashReactions", payload: linkedinReactionsPayload, pageUrl: "https://www.linkedin.com/company/he4rt/", url: linkedinReplyCommentReactionsUrl });
     capture(send, { provider: "linkedin", endpoint: "socialDashComments", payload: linkedinCommentsPayload, pageUrl: "https://www.linkedin.com/company/he4rt/", url: linkedinCommentsUrl });
     capture(send, { provider: "linkedin", endpoint: "feedDashReshareFeed", payload: linkedinRepostsPayload, pageUrl: "https://www.linkedin.com/company/he4rt/", url: linkedinRepostsUrl });
 

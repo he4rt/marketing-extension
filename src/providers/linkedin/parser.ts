@@ -275,7 +275,7 @@ export function linkedinParseReactions(
   try {
     const u = new URL(url);
     const vars = u.searchParams.get("variables") || "";
-    const commentMatch = vars.match(/threadUrn:([^,)]+)/);
+    const commentMatch = vars.match(/threadUrn:(urn:li:comment:\([^)]+\))/) || vars.match(/threadUrn:([^,)]+)/);
     if (commentMatch?.[1]) {
       activityUrn = decodeURIComponent(commentMatch[1]);
       if (activityUrn.startsWith("urn:li:comment:")) {
@@ -332,6 +332,9 @@ export function linkedinParseReactions(
       username: name.toLowerCase().replace(/\s+/g, "_"),
       name,
       avatar_url: avatarUrl,
+      headline: String((lockup.subtitle as AnyRecord)?.text || ""),
+      navigation_url: String((lockup.navigationUrl as AnyRecord) || ""),
+      reaction_type: String((reaction.reactionType as string) || ""),
     });
   }
 
@@ -389,6 +392,9 @@ function linkedinParseCommentReactions(
       username: name.toLowerCase().replace(/\s+/g, "_"),
       name,
       avatar_url: avatarUrl,
+      headline: String((lockup.subtitle as AnyRecord)?.text || ""),
+      navigation_url: String((lockup.navigationUrl as AnyRecord) || ""),
+      reaction_type: String((reaction.reactionType as string) || ""),
     });
   }
 
@@ -449,6 +455,7 @@ export function linkedinParseReposts(
       const name =
         `${first} ${last}`.trim() ||
         String((header.text as AnyRecord)?.text || "").replace(/\s+reposted this.*$/, "");
+      const publicIdentifier = String(profile?.publicIdentifier || "");
 
       let avatarUrl = "";
       const imgDetail = ((header.image as AnyRecord)?.attributes as Array<AnyRecord>)?.[0]
@@ -463,7 +470,7 @@ export function linkedinParseReposts(
       if (seenUrns.has(profileUrn)) continue;
       seenUrns.add(profileUrn);
 
-      users.push({ urn: profileUrn, name, avatar_url: avatarUrl });
+      users.push({ urn: profileUrn, name, avatar_url: avatarUrl, public_identifier: publicIdentifier });
     } else if (actionsPos === "ACTOR_COMPONENT") {
       const entry = extractRepostEntry(update, elementUrn, byEntityUrn);
       if (!entry?.activity_urn) continue;
@@ -588,7 +595,7 @@ export function linkedinParseComments(
 
 function extractCommentItem(
   comment: AnyRecord,
-  _byEntityUrn: Record<string, AnyRecord>,
+  byEntityUrn: Record<string, AnyRecord>,
   existingIds: Set<string>,
 ): SocialComment | null {
   const commenter = (comment.commenter as AnyRecord) || {};
@@ -609,6 +616,34 @@ function extractCommentItem(
   if (!commentId || existingIds.has(commentId)) return null;
   existingIds.add(commentId);
 
+  let likeCount = 0;
+  let threadUrn = "";
+  let totalReactions = 0;
+  const reactionBreakdown: Record<string, number> = {};
+  const socialDetailRef = comment["*socialDetail"] as string | undefined;
+  if (socialDetailRef) {
+    const socialDetail = byEntityUrn[socialDetailRef] as AnyRecord | undefined;
+    if (socialDetail) {
+      threadUrn = String(socialDetail.threadUrn || "");
+      const countsRef = socialDetail["*totalSocialActivityCounts"] as string | undefined;
+      if (countsRef) {
+        const counts = byEntityUrn[countsRef] as AnyRecord | undefined;
+        if (counts) {
+          likeCount = (counts.numLikes as number) || 0;
+          const rtc = counts.reactionTypeCounts as Array<AnyRecord> | undefined;
+          if (rtc) {
+            for (const r of rtc) {
+              const type = String(r.reactionType || "");
+              const count = (r.count as number) || 0;
+              totalReactions += count;
+              reactionBreakdown[type] = count;
+            }
+          }
+        }
+      }
+    }
+  }
+
   return {
     provider: "linkedin",
     comment_id: commentId,
@@ -622,7 +657,10 @@ function extractCommentItem(
       name,
       avatar_url: avatarUrl,
     },
-    like_count: 0,
+    like_count: likeCount,
+    total_reactions: totalReactions,
+    reaction_breakdown: reactionBreakdown,
+    threadUrn,
     parent_comment_id: null,
   };
 }
@@ -659,47 +697,19 @@ function extractCommentReplies(
     )
       continue;
 
-    const commenter = (replyComment.commenter as AnyRecord) || {};
-    const name = String((commenter.title as AnyRecord)?.text || "");
-    const urn = String(commenter.urn || "");
+    const replyItem = extractCommentItem(replyComment, byEntityUrn, existingIds);
+    if (!replyItem) continue;
 
-    let avatarUrl = "";
-    const imgDetail = ((commenter.image as AnyRecord)?.attributes as Array<AnyRecord>)?.[0]
-      ?.detailData as AnyRecord | undefined;
-    if (imgDetail) {
-      const vec =
-        (imgDetail.nonEntityProfilePicture as AnyRecord)?.vectorImage ||
-        (imgDetail.vectorImage as AnyRecord);
-      avatarUrl = buildImageUrl(vec as AnyRecord);
-    }
-
-    const commentId = String(replyComment.entityUrn || "");
-    if (!commentId || existingIds.has(commentId)) continue;
-    existingIds.add(commentId);
-
-    replies.push({
-      provider: "linkedin",
-      comment_id: commentId,
-      publication_id: publicationId,
-      text: String((replyComment.commentary as AnyRecord)?.text || ""),
-      created_at: "",
-      author: {
-        provider: "linkedin",
-        provider_user_id: urn,
-        username: name.toLowerCase().replace(/\s+/g, "_"),
-        name,
-        avatar_url: avatarUrl,
-      },
-      like_count: 0,
-      parent_comment_id: parentCommentId,
-    });
+    replyItem.publication_id = publicationId;
+    replyItem.parent_comment_id = parentCommentId;
+    replies.push(replyItem);
 
     const nested = extractCommentReplies(
       replyComment,
       byEntityUrn,
       existingIds,
       publicationId,
-      commentId,
+      replyItem.comment_id,
       depth + 1,
       maxDepth,
     );
