@@ -77,9 +77,24 @@ describe("golden-master export v3", () => {
   test("X", () => {
     const { send } = harness();
     send({ action: "SET_HANDLE", handle: "He4rtDevs" });
-    capture(send, { provider: "x", endpoint: "UserByScreenName", payload: userByScreenNamePayload, pageUrl: "https://x.com/He4rtDevs" });
-    capture(send, { provider: "x", endpoint: "UserTweets", payload: userTweetsPayload, pageUrl: "https://x.com/He4rtDevs" });
-    capture(send, { provider: "x", endpoint: "Favoriters", payload: favoritersPayload, pageUrl: "https://x.com/He4rtDevs/status/100/likes" });
+    capture(send, {
+      provider: "x",
+      endpoint: "UserByScreenName",
+      payload: userByScreenNamePayload,
+      pageUrl: "https://x.com/He4rtDevs",
+    });
+    capture(send, {
+      provider: "x",
+      endpoint: "UserTweets",
+      payload: userTweetsPayload,
+      pageUrl: "https://x.com/He4rtDevs",
+    });
+    capture(send, {
+      provider: "x",
+      endpoint: "Favoriters",
+      payload: favoritersPayload,
+      pageUrl: "https://x.com/He4rtDevs/status/100/likes",
+    });
 
     expect(exportOf(send)).toMatchSnapshot();
   });
@@ -87,10 +102,30 @@ describe("golden-master export v3", () => {
   test("Instagram", () => {
     const { send } = harness();
     send({ action: "SET_HANDLE", handle: "he4rtdevs" });
-    capture(send, { provider: "instagram", endpoint: "InstagramFeedTimeline", payload: instagramFeedPayload, pageUrl: "https://www.instagram.com/" });
-    capture(send, { provider: "instagram", endpoint: "InstagramMedia", payload: instagramSingleMediaPayload, pageUrl: "https://www.instagram.com/p/CAR789/" });
-    capture(send, { provider: "instagram", endpoint: "InstagramComments", payload: instagramCommentsPayload, pageUrl: "https://www.instagram.com/p/ABC123/" });
-    capture(send, { provider: "instagram", endpoint: "InstagramLikers", payload: instagramLikersPayload, pageUrl: "https://www.instagram.com/p/ABC123/liked_by/" });
+    capture(send, {
+      provider: "instagram",
+      endpoint: "InstagramFeedTimeline",
+      payload: instagramFeedPayload,
+      pageUrl: "https://www.instagram.com/",
+    });
+    capture(send, {
+      provider: "instagram",
+      endpoint: "InstagramMedia",
+      payload: instagramSingleMediaPayload,
+      pageUrl: "https://www.instagram.com/p/CAR789/",
+    });
+    capture(send, {
+      provider: "instagram",
+      endpoint: "InstagramComments",
+      payload: instagramCommentsPayload,
+      pageUrl: "https://www.instagram.com/p/ABC123/",
+    });
+    capture(send, {
+      provider: "instagram",
+      endpoint: "InstagramLikers",
+      payload: instagramLikersPayload,
+      pageUrl: "https://www.instagram.com/p/ABC123/liked_by/",
+    });
 
     expect(exportOf(send)).toMatchSnapshot();
   });
@@ -98,10 +133,33 @@ describe("golden-master export v3", () => {
   test("LinkedIn", () => {
     const { send } = harness();
     send({ action: "SET_HANDLE", handle: "He4rt Developers", provider: "linkedin" });
-    capture(send, { provider: "linkedin", endpoint: "feedDashOrganizationalPageUpdates", payload: linkedinFeedPayload, pageUrl: "https://www.linkedin.com/company/he4rt/" });
-    capture(send, { provider: "linkedin", endpoint: "socialDashReactions", payload: linkedinReactionsPayload, pageUrl: "https://www.linkedin.com/company/he4rt/", url: linkedinReactionsUrl });
-    capture(send, { provider: "linkedin", endpoint: "socialDashComments", payload: linkedinCommentsPayload, pageUrl: "https://www.linkedin.com/company/he4rt/", url: linkedinCommentsUrl });
-    capture(send, { provider: "linkedin", endpoint: "feedDashReshareFeed", payload: linkedinRepostsPayload, pageUrl: "https://www.linkedin.com/company/he4rt/", url: linkedinRepostsUrl });
+    capture(send, {
+      provider: "linkedin",
+      endpoint: "feedDashOrganizationalPageUpdates",
+      payload: linkedinFeedPayload,
+      pageUrl: "https://www.linkedin.com/company/he4rt/",
+    });
+    capture(send, {
+      provider: "linkedin",
+      endpoint: "socialDashReactions",
+      payload: linkedinReactionsPayload,
+      pageUrl: "https://www.linkedin.com/company/he4rt/",
+      url: linkedinReactionsUrl,
+    });
+    capture(send, {
+      provider: "linkedin",
+      endpoint: "socialDashComments",
+      payload: linkedinCommentsPayload,
+      pageUrl: "https://www.linkedin.com/company/he4rt/",
+      url: linkedinCommentsUrl,
+    });
+    capture(send, {
+      provider: "linkedin",
+      endpoint: "feedDashReshareFeed",
+      payload: linkedinRepostsPayload,
+      pageUrl: "https://www.linkedin.com/company/he4rt/",
+      url: linkedinRepostsUrl,
+    });
 
     expect(exportOf(send)).toMatchSnapshot();
   });
