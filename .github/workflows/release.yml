@@ -1,0 +1,87 @@
+name: Release
+
+run-name: BUILD-${{ github.run_number }}
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build, validar e publicar
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # necessário para criar tags e releases no GitHub
+
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Gerar versão CalVer
+        id: version
+        env:
+          TZ: America/Sao_Paulo
+        run: |
+          TIMESTAMP=$(date '+%Y%m%d.%H%M%S')
+          GIT_SHORT=$(git rev-parse --short HEAD)
+          TAG="${TIMESTAMP}.${GIT_SHORT}"
+
+          # Chrome manifest: 1-4 inteiros separados por ponto (0-65535 cada)
+          CHROME_VERSION=$(date '+%Y.%-m%d.%-H%M')
+
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "chrome_version=${CHROME_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Versão: ${TAG} (manifest: ${CHROME_VERSION})"
+
+      - name: Instalar Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: '.bun-version'
+
+      - name: Cache de node_modules
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: node_modules
+          key: node-modules-${{ hashFiles('**/bun.lock') }}
+          restore-keys: |
+            node-modules-
+
+      - name: Instalar dependências
+        run: bun install --frozen-lockfile
+
+      - name: Gerar build carregável no Chrome
+        env:
+          EXT_VERSION: ${{ steps.version.outputs.chrome_version }}
+          EXT_VERSION_NAME: ${{ steps.version.outputs.tag }}
+        run: bun run build
+
+      - name: Validar extensão
+        run: bun run validate
+
+      - name: Gerar pacote da extensão
+        run: bun run package
+
+      - name: Gerar checksums
+        run: |
+          cd dist/packages
+          sha256sum *.zip > checksums.txt
+
+      - name: Criar release no GitHub
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          gh release create "$RELEASE_TAG" \
+            dist/packages/he4rt-analytics-chrome.zip \
+            dist/packages/checksums.txt \
+            --title "Release $RELEASE_TAG" \
+            --generate-notes
