@@ -144,6 +144,18 @@ bun run format         # formata o código
 > o código. O pipeline completo de teste no Chrome está em
 > [`docs/chrome-pipeline-teste.md`](docs/chrome-pipeline-teste.md).
 
+### CI
+
+O workflow **Validar extensão** roda em todo PR e push para `main`
+(typecheck → validate → build → package → upload do `.zip`). Actions pinadas por SHA
+e auditadas com [zizmor](https://docs.zizmor.sh/) (`uvx zizmor . --persona=auditor`).
+
+O [Dependabot](https://docs.github.com/en/code-security/dependabot) abre PRs automáticos
+para atualização de actions (semanal) e dependências npm (diário).
+
+A versão do Bun no CI vem de `.bun-version` — ao atualizar, mantenha em sincronia com
+`.mise.toml`.
+
 ## Roadmap
 
 - [ ] **Coleta por escopo** — escolher como cada rede coleta (por perfil, por hashtag, etc.)
