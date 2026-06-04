@@ -420,7 +420,7 @@ body {
 
 /* Scrollable tab content */
 .tab-content {
-  overflow-y: auto;
+  overflow-y: hidden;
   max-height: 430px;
 }
 

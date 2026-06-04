@@ -8,11 +8,13 @@ import {
   instagramSingleMediaPayload,
 } from "./fixtures/instagram-payloads";
 import {
+  linkedinCommentReactionsUrl,
   linkedinCommentsPayload,
   linkedinCommentsUrl,
   linkedinFeedPayload,
   linkedinReactionsPayload,
   linkedinReactionsUrl,
+  linkedinReplyCommentReactionsUrl,
   linkedinRepostsPayload,
   linkedinRepostsUrl,
 } from "./fixtures/linkedin-payloads";

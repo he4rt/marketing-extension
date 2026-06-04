@@ -2,7 +2,7 @@ import { PROVIDER_METAS } from "../providers/meta";
 import type {
   EndpointStore,
   ExportJSON,
-  ExportLinkedInPost,
+  LinkedInPostData,
   SocialComment,
   SocialEngagement,
   SocialProvider,
@@ -17,9 +17,17 @@ type ProviderData = {
   type: SocialProvider;
 };
 
+type LinkedInPlatformPost = LinkedInPostData & {
+  engagers: {
+    reactions: { captured: number; total: number };
+    reposts: { captured: number; total: number };
+    comments: { captured: number; total: number };
+  };
+};
+
 type LinkedInProviderData = {
   type: "linkedin";
-  content: ExportLinkedInPost[];
+  content: LinkedInPlatformPost[];
   lastUpdated: string | null;
 };
 
@@ -351,10 +359,14 @@ function renderLinkedIn(data: LinkedInProviderData) {
     const date = post.created_at ? formatDate(post.created_at) : "";
     const author = post.author.name || post.author.vanity_name || "Visível";
     const text = post.text || "(sem texto)";
-    const engagers = post.engagers || { reactions: {}, reposts: {}, comments: {} };
-    const r = toEngagerSummary(engagers.reactions);
-    const rp = toEngagerSummary(engagers.reposts);
-    const c = toEngagerSummary(engagers.comments);
+    const engagers = post.engagers || {
+      reactions: { captured: 0, total: 0 },
+      reposts: { captured: 0, total: 0 },
+      comments: { captured: 0, total: 0 },
+    };
+    const reactCap = engagers.reactions.captured;
+    const repostCap = engagers.reposts.captured;
+    const commentCap = engagers.comments.captured;
 
     card.innerHTML = `
       <div class="publication-top">
@@ -364,14 +376,9 @@ function renderLinkedIn(data: LinkedInProviderData) {
       <div class="publication-author">${escapeHtml(author)}</div>
       <div class="publication-text">${escapeHtml(text)}</div>
       <div class="publication-metrics">
-        <span><strong>${fmt(post.metrics.like_count)}</strong> curtidas</span>
-        <span><strong>${fmt(post.metrics.comment_count)}</strong> comentários</span>
-        <span><strong>${fmt(post.metrics.share_count)}</strong> compart.</span>
-        <span><strong>${c}</strong> respostas capt.</span>
-      </div>
-      <div class="publication-metrics" style="margin-top:3px;font-size:10px;color:#536471">
-        <span>reações: ${r}</span>
-        <span>reposts: ${rp}</span>
+        <span title="${reactCap} capturadas de ${post.metrics.like_count} total"><strong>${reactCap}/${fmt(post.metrics.like_count)}</strong> curtidas</span>
+        <span title="${commentCap} capturados de ${post.metrics.comment_count} total"><strong>${commentCap}/${fmt(post.metrics.comment_count)}</strong> comentários</span>
+        <span title="${repostCap} capturados de ${post.metrics.share_count} total"><strong>${repostCap}/${fmt(post.metrics.share_count)}</strong> compart.</span>
       </div>
     `;
 
@@ -382,14 +389,6 @@ function renderLinkedIn(data: LinkedInProviderData) {
 
     list.appendChild(card);
   }
-}
-
-function toEngagerSummary(v: unknown): string {
-  if (!v || typeof v !== "object") return "0";
-  const obj = v as Record<string, unknown>;
-  const captured = typeof obj.captured === "number" ? obj.captured : 0;
-  const total = typeof obj.total === "number" ? obj.total : 0;
-  return total > captured ? `${captured}/${total}` : `${captured}`;
 }
 
 // --- All tab ---

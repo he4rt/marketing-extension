@@ -204,6 +204,8 @@ function buildLinkedInCommentWithReactions(
       author: c.author,
       text: c.text,
       created_at: c.created_at,
+      total_reactions: c.total_reactions,
+      reaction_breakdown: c.reaction_breakdown,
       replies: [],
     };
     byId.set(c.comment_id, node);
@@ -219,8 +221,14 @@ function buildLinkedInCommentWithReactions(
     }
   }
 
+  const threadUrnByCommentId = new Map<string, string>();
+  for (const c of items) {
+    if (c.threadUrn) threadUrnByCommentId.set(c.comment_id, c.threadUrn);
+  }
+
   for (const [, node] of byId) {
-    const reactions = commentReactions[node.comment_id];
+    const threadUrn = threadUrnByCommentId.get(node.comment_id);
+    const reactions = commentReactions[threadUrn ?? ""] ?? commentReactions[node.comment_id];
     if (reactions?.users?.length) {
       node.reaction_users = reactions.users;
     }
@@ -302,16 +310,17 @@ export function buildPlatformDataLinkedin(store: BackgroundStore): ExportV3Platf
       const reactionUsers: LinkedInReactionUser[] = (reactions?.users || []).map((u) => ({
         urn: u.provider_user_id,
         name: u.name,
-        headline: "",
+        headline: u.headline ?? "",
         avatar_url: u.avatar_url,
-        navigation_url: "",
-        reaction_type: (u as any).reaction_type || "",
+        navigation_url: u.navigation_url ?? "",
+        reaction_type: u.reaction_type ?? "",
       }));
 
       const repostEntries: LinkedInRepostEntry[] = (reposts?.users || []).map((u) => ({
         urn: u.urn,
         name: u.name,
         avatar_url: u.avatar_url,
+        public_identifier: u.public_identifier,
         ...(u.activity_urn
           ? {
               id: u.id,
