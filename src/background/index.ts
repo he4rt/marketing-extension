@@ -117,6 +117,22 @@ function notifyStoreUpdated() {
 // ---------------------------------------------------------------------------
 
 chrome.runtime.onMessage.addListener((request: RuntimeMessage, _sender, sendResponse) => {
+  if (request.action === "GET_DEVTO_API_KEY") {
+    chrome.storage.local.get("devtoApiKey").then((result) => {
+      sendResponse({ apiKey: (result.devtoApiKey as string | undefined) ?? null });
+    });
+    return true;
+  }
+
+  if (request.action === "SET_DEVTO_API_KEY") {
+    const { apiKey } = request;
+    const op = apiKey
+      ? chrome.storage.local.set({ devtoApiKey: apiKey })
+      : chrome.storage.local.remove("devtoApiKey");
+    op.then(() => sendResponse({ ok: true }));
+    return true;
+  }
+
   hydration
     .then(() => {
       // handleRuntimeMessage pode devolver um valor síncrono OU uma Promise (ex.:
