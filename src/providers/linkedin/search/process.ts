@@ -87,9 +87,7 @@ export function processLinkedInSearchCapture(
   const lstore = store.platforms.linkedin.extra;
   const query = activeQuery(request.pageUrl);
 
-  const { publications, unreadable, breakdowns } = parseLinkedInSearchSdui(
-    String(request.payload),
-  );
+  const { publications, unreadable, breakdowns } = parseLinkedInSearchSdui(String(request.payload));
 
   // Acumula os nós em drift (#18). O parser é defensivo e nunca lança; o contador de
   // ilegíveis é o sinal de saúde do shape SDUI exibido no popup. Soma entre capturas

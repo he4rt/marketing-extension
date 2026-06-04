@@ -50,7 +50,10 @@ function maxByKey(target: Map<string, number>, raw: string, re: RegExp, id: stri
 // Detalhamento de reações POR TIPO da `activityUrn` (LIKE/PRAISE/EMPATHY/…), dedup por
 // MAX. É a riqueza que o export expõe em reaction_breakdown (invariante #3). Só tipos
 // conhecidos e com valor > 0 entram. Defensivo: sem contadores → {}. Nunca lança.
-export function reactionBreakdown(activityUrn: string, tables: FlightTables): Record<string, number> {
+export function reactionBreakdown(
+  activityUrn: string,
+  tables: FlightTables,
+): Record<string, number> {
   const id = activityUrn.split(":").pop() ?? activityUrn;
   const reactions = new Map<string, number>();
   for (const raw of tables.byId.values()) {

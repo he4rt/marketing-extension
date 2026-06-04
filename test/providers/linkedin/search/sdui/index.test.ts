@@ -80,7 +80,11 @@ describe("parseLinkedInSearchSdui — fixture mínima (1 post)", () => {
 
 describe("parseLinkedInSearchSdui — defensivo", () => {
   test("string vazia → { publications: [], unreadable: 0 } sem throw", () => {
-    expect(parseLinkedInSearchSdui("")).toEqual({ publications: [], unreadable: 0, breakdowns: {} });
+    expect(parseLinkedInSearchSdui("")).toEqual({
+      publications: [],
+      unreadable: 0,
+      breakdowns: {},
+    });
   });
 
   test("string truncada/lixo → não lança, retorna vazio-ish", () => {
