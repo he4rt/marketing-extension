@@ -1,3 +1,4 @@
+import type { ActiveFetchFacet } from "../capture/active-fetch";
 import type { BackgroundProviderFacet } from "../providers/contract";
 import {
   buildPlatformDataInstagram,
@@ -12,6 +13,8 @@ import {
   computeSummaryLinkedin,
   linkedinProvider,
 } from "../providers/linkedin";
+import { getCalibration, isCalibrated } from "../providers/linkedin/active-fetch/calibration";
+import { linkedinActiveFetchFacet } from "../providers/linkedin/active-fetch/facet";
 import { publicationKey } from "../providers/shared/utils";
 import { buildPlatformDataX, computeSummaryX, xProvider } from "../providers/x";
 import type {
@@ -30,6 +33,7 @@ import type {
   VisibleCommentsMessage,
 } from "../shared/messages";
 import { sortPublications } from "../shared/sort";
+import { getActiveFetchStatus, runActiveFetch } from "./active-fetch";
 import { recordRawPayload, storePublication } from "./store";
 
 export type MessageContext = {
@@ -149,6 +153,13 @@ const BACKGROUND_PROVIDERS: Record<SocialProvider, BackgroundProviderFacet> = {
   x: xProvider,
   instagram: instagramProvider,
   linkedin: linkedinProvider,
+};
+
+// Registro PARALELO a BACKGROUND_PROVIDERS para o caminho ATIVO (Active Fetch / L3).
+// Parcial: só providers que declaram aprofundamento on-demand aparecem aqui. O scheduler
+// (src/background/active-fetch.ts, #17) itera este registry — sem `if` por rede.
+export const ACTIVE_FETCH_FACETS: Partial<Record<SocialProvider, ActiveFetchFacet>> = {
+  linkedin: linkedinActiveFetchFacet,
 };
 
 // ---------------------------------------------------------------------------
@@ -424,6 +435,12 @@ function totalPublicationCount(store: BackgroundStore) {
   );
 }
 
+// Publicações consolidadas de UM provider (não cumulativo entre plataformas). Usado no
+// log de captura para mostrar o total daquela rede, não a soma global (que confundia).
+function providerPublicationCount(store: BackgroundStore, provider: SocialProvider) {
+  return Object.keys((store.platforms[provider] as NormalizedStore).publications).length;
+}
+
 function endpointSummary(store: BackgroundStore) {
   const summary: Record<
     string,
@@ -520,9 +537,14 @@ export function handleRuntimeMessage(
   if (capture) {
     if (capture.pageUrl) store.providerPageUrls[capture.provider] = capture.pageUrl;
     recordRawPayload(store, capture.provider, capture.endpoint, capture.payload, capture.timestamp);
+    // Delta por-captura: quantas publicações ESTA captura adicionou ao store do provider
+    // (vs. o total cumulativo de todas as redes, que não dizia nada sobre a captura).
+    const before = providerPublicationCount(store, capture.provider);
     BACKGROUND_PROVIDERS[capture.provider].processCapture(store, capture);
+    const added = providerPublicationCount(store, capture.provider) - before;
     context.log?.(
-      `[Social Interceptor] ${capture.provider}:${capture.endpoint} (publicações: ${totalPublicationCount(store)})`,
+      `[He4rt Analytics] ${capture.provider}:${capture.endpoint} · +${added} ` +
+        `(total ${capture.provider}: ${providerPublicationCount(store, capture.provider)})`,
     );
     return { success: true };
   }
@@ -686,7 +708,16 @@ export function handleRuntimeMessage(
           };
         })
         .filter(Boolean);
-      return { type: "linkedin" as const, content: enriched, lastUpdated: store.lastUpdated };
+      // #18: sinais de UX para o popup. `unreadable` = nós SDUI em drift acumulados na
+      // descoberta (sub-linha "M ilegíveis"). `calibrated` = a assinatura Voyager foi
+      // colhida o suficiente p/ ao menos UM endpoint L3 (habilita o botão "Aprofundar").
+      return {
+        type: "linkedin" as const,
+        content: enriched,
+        lastUpdated: store.lastUpdated,
+        unreadable: lstore.searchUnreadable ?? 0,
+        calibrated: isCalibrated(getCalibration()),
+      };
     }
     return {
       type: "unknown",
@@ -753,6 +784,17 @@ export function handleRuntimeMessage(
     );
     const target = profile?.detectFromPage?.(request.pageUrl) ?? null;
     return { mode: "profile", target };
+  }
+
+  // Active Fetch (L3) — #16/#17. RUN dispara o scheduler (Promise<ActiveFetchStatus>);
+  // GET é o polling síncrono do singleton de status. A lógica de fan-out vive em
+  // src/background/active-fetch.ts (sem inchar o controller).
+  if (request.action === "RUN_ACTIVE_FETCH") {
+    return runActiveFetch(store, request.provider);
+  }
+
+  if (request.action === "GET_ACTIVE_FETCH_STATUS") {
+    return getActiveFetchStatus(request.provider);
   }
 
   return undefined;

@@ -65,8 +65,14 @@
       <div class="toolbar">
         <div class="stats-col">
           <span id="liPublicationCount" class="stats-label">0 publicações</span>
+          <!-- Ponto de extensão (#14): sub-linha com posts descobertos + ilegíveis (parser drift). -->
+          <span id="liDiscoveredSub" class="stats-sub hidden"></span>
+          <!-- #16: progresso do fan-out Active Fetch (k/N · Actors). Oculto até rodar. -->
+          <span id="liDeepenProgress" class="stats-sub hidden"></span>
         </div>
         <div class="actions">
+          <!-- #14→#16: botão de aprofundamento L3 (Active Fetch). -->
+          <button id="liDeepenBtn" class="btn btn-sm btn-export hidden" disabled type="button">Aprofundar engajamento (L3)</button>
           <button id="liExportBtn" class="btn btn-sm btn-export" disabled type="button">Exportar Dados</button>
           <button id="liExportRawBtn" class="btn btn-sm btn-payload" disabled type="button">Exportar Raw</button>
           <button id="liClearBtn" class="btn btn-sm btn-danger" disabled type="button">Limpar</button>

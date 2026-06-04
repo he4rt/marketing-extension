@@ -22,6 +22,10 @@ import type { RuntimeMessage } from "../shared/messages";
 
 export type NetworkMatch = {
   endpoint: string;
+  // Como o interceptor lê o corpo da resposta. Default "json" (clone.json()).
+  // "text" (clone.text()) para respostas não-JSON, ex.: o stream SDUI/Flight da
+  // busca do LinkedIn. Hint genérico: nenhum motor conhece redes individuais.
+  responseFormat?: "json" | "text";
 };
 
 export type NetworkInterceptStrategy = {

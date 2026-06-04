@@ -30,11 +30,20 @@ import {
   linkedinParseReactions,
   linkedinParseReposts,
 } from "./parser";
+import { processLinkedInSearchCapture, SEARCH_ENDPOINT } from "./search/process";
+import { searchScopeMode } from "./search/scope";
 
 export function processLinkedInCapture(store: BackgroundStore, request: CapturedPayloadMessage) {
   // A riqueza bespoke do LinkedIn vive em platforms.linkedin.extra (LinkedInExtra).
   const lstore = store.platforms.linkedin.extra;
   const handle = trackedHandleForProvider(store, "linkedin");
+
+  // Captura SDUI da busca (#14): roteada para o módulo dedicado em search/process.ts,
+  // que parseia o stream Flight, consolida no store e carimba a Provenance "search".
+  if (request.endpoint === SEARCH_ENDPOINT) {
+    processLinkedInSearchCapture(store, request);
+    return;
+  }
 
   if (request.endpoint === "feedDashOrganizationalPageUpdates") {
     const publications = linkedinFeedToPublications(request.payload, handle);
@@ -296,7 +305,12 @@ export function buildPlatformDataLinkedin(store: BackgroundStore): ExportV3Platf
       const shareUrn = post.share_urn;
       const activityUrn = post.activity_urn;
       const reactions = lstore.reactions[shareUrn] || lstore.reactions[activityUrn];
-      const reposts = lstore.reposts[shareUrn];
+      // Fallback por activity_urn (mesmo padrão de reactions/comments): posts vindos da
+      // busca SDUI têm share_urn vazio, então o Active Fetch (L3) consolida os reposts sob
+      // o activity_urn (targetUrn:<activity_urn>). Sem este fallback a riqueza de reposts
+      // do L3-search se perderia do export. Byte-compat: no profile/feed os reposts ficam
+      // sob o share_urn e não há entrada sob activity_urn → fallback resolve undefined.
+      const reposts = lstore.reposts[shareUrn] || lstore.reposts[activityUrn];
       const commentsStore = lstore.comments[shareUrn] || lstore.comments[activityUrn];
 
       const reactionUsers: LinkedInReactionUser[] = (reactions?.users || []).map((u) => ({
@@ -342,6 +356,14 @@ export function buildPlatformDataLinkedin(store: BackgroundStore): ExportV3Platf
         trackedAccountUrn,
       );
 
+      // Provenance aditiva no v3 (#5/#14): anexa {mode,value} ao item SÓ quando o
+      // store tem a entrada E o mode é "search". O modo "profile" permanece interno
+      // para preservar byte-compat dos snapshots profile-puro (LinkedIn profile grava
+      // provenance "profile", mas ela NÃO pode vazar no export atual). A chave de
+      // lookup é a mesma de recordProvenance: publicationKey("linkedin", activity_urn).
+      const prov = store.provenance.linkedin?.[publicationKey("linkedin", activityUrn)];
+      const searchProv = prov && prov.mode === "search" ? prov : null;
+
       acc.push({
         ...post,
         engagers: {
@@ -350,6 +372,7 @@ export function buildPlatformDataLinkedin(store: BackgroundStore): ExportV3Platf
           comments: exportComments,
         },
         engagement_metrics: engagementMetrics,
+        ...(searchProv ? { provenance: searchProv } : {}),
       });
       return acc;
     },
@@ -404,6 +427,9 @@ export const scopeModes: ScopeMode[] = [
     label: "Profile",
     selects: (pub, value) => pub.author.name?.toLowerCase().includes(value.toLowerCase()) ?? false,
   },
+  // Modo "search" (#16): detectFromPage lê ?keywords= da SRP; selects() sempre true
+  // (o LinkedIn já filtrou no servidor). Definido em search/scope.ts.
+  searchScopeMode,
 ];
 
 export const linkedinProvider: BackgroundProviderFacet = {

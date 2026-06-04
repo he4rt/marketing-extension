@@ -67,10 +67,12 @@ export type SocialPublication = {
   reposted_publication_id?: null | string;
   shortcode?: string;
 
-  // Provenance do Scope (#9) — RESERVADO para o v4. A Provenance interna ATIVA vive em
-  // BackgroundStore.provenance (mapa por publicação), de propósito fora da publicação,
-  // para nunca poder vazar no export v3 (byte-compat). Estes campos ficam como interface
-  // futura: quando o v4 ligar, o exporter os preenche a partir do mapa.
+  // Provenance do Scope (#9). A Provenance ATIVA vive em BackgroundStore.provenance
+  // (mapa por publicação), de propósito fora da publicação. No v3 ela já é lida por
+  // buildPlatformDataLinkedin e anexada como ExportLinkedInPost.provenance — mas SÓ
+  // para o modo "search" (#5/#14); o modo "profile" permanece interno (byte-compat).
+  // Estes campos inline (scope_mode/scope_value) seguem reservados para quando o v4
+  // promover a Provenance a campo da própria SocialPublication, para todos os modos.
   scope_mode?: string;
   scope_value?: string;
 };
@@ -218,6 +220,11 @@ export type LinkedInExtra = {
   commentReactions: Record<string, { users: SocialActor[] }>;
   accountInfo: TrackedProfile | null;
   feedOrder: string[];
+  // Acumulador de nós SDUI em "drift" (shape irreconhecível pelo parser da busca) — os
+  // "ilegíveis" de #18. Cresce a cada captura `searchResultsContent`; lido pelo controller
+  // p/ o popup exibir "N posts · M ilegíveis (parser drift)". Volátil (vive no store do SW),
+  // não vaza para o export v3. Opcional p/ não inflar fixtures profile-puro (= undefined).
+  searchUnreadable?: number;
 };
 
 export type NormalizedStore = {
@@ -241,8 +248,10 @@ export type LinkedInStore = NormalizedStore & {
 // Main store ----------------------------------------------------------------
 
 // Provenance do Scope (#9): para cada publicação capturada, registra QUAL modo de coleta
-// (profile/…) e QUAL valor (handle/perfil) a trouxe. Mapa INTERNO — nunca é lido por
-// nenhum buildPlatformData*, então é impossível vazar no export v3.
+// (profile/…) e QUAL valor (handle/perfil) a trouxe. No v3 é LIDO por
+// buildPlatformDataLinkedin (#5/#14) e anexado a ExportLinkedInPost.provenance — mas
+// SÓ quando mode === "search"; o modo "profile" continua interno (byte-compat dos
+// snapshots profile-puro). Sem entrada no mapa → a chave nem aparece no item exportado.
 export type ScopeProvenance = { mode: string; value: string };
 
 export type BackgroundStore = {
@@ -350,6 +359,10 @@ export type ExportLinkedInPost = Omit<LinkedInPostData, "engagers"> & {
     comments: ExportComment[];
   };
   engagement_metrics: LinkedInEngagementMetrics;
+  // Provenance do Scope (#5/#14): ADITIVA no v3. Presente SÓ quando
+  // store.provenance.linkedin tiver a chave E o mode for "search" (ver
+  // buildPlatformDataLinkedin). Ausente em posts profile-puro → byte-compat.
+  provenance?: ScopeProvenance;
 };
 
 export type ExportV3PlatformLinkedin = {

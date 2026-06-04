@@ -10,7 +10,11 @@ export type ProviderMeta = {
   color: string;
   popupPrefix: string; // prefixo dos ids no popup (x, ig, li)
   hosts: string[]; // domínios base para casamento em runtime
-  matches: string[]; // padrões chrome para o manifest
+  matches: string[]; // padrões chrome para injeção de content script no manifest
+  // Hosts adicionais que o provider precisa permissão para CHAMAR (fetch ativo),
+  // separados de `matches` para o split do ADR-0003 (Active Fetch). O manifest une os dois
+  // em `host_permissions`; ausente = só os `matches` valem como permissão de host.
+  hostPermissions?: string[];
 };
 
 export const PROVIDER_METAS: ProviderMeta[] = [
@@ -37,6 +41,9 @@ export const PROVIDER_METAS: ProviderMeta[] = [
     popupPrefix: "li",
     hosts: ["linkedin.com"],
     matches: ["https://www.linkedin.com/*"],
+    // Active Fetch (L3) replica chamadas Voyager para www.linkedin.com — precisa da
+    // permissão de host explícita além dos matches de content script.
+    hostPermissions: ["https://www.linkedin.com/*"],
   },
 ];
 

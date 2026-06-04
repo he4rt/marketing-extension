@@ -80,7 +80,8 @@ window.fetch = function patchedFetch(this: typeof window, ...args: Parameters<ty
       return originalFetch.apply(this, args).then(async (response) => {
         try {
           const clone = response.clone();
-          const data = await clone.json();
+          // Hint genérico: "text" lê o corpo cru (stream SDUI/Flight); senão json().
+          const data = match.responseFormat === "text" ? await clone.text() : await clone.json();
           emitFromPayload(resolved, endpoint, url, data);
         } catch {}
         return response;
@@ -98,6 +99,7 @@ type CapturedXMLHttpRequest = XMLHttpRequest & {
   _he4rtEndpoint?: null | string;
   _he4rtResolved?: ResolvedStrategy | null;
   _he4rtUrl?: string;
+  _he4rtResponseFormat?: "json" | "text";
 };
 
 function resolveUrl(raw: string | URL): string {
@@ -121,9 +123,11 @@ XMLHttpRequest.prototype.open = function patchedOpen(
 ) {
   const absoluteUrl = resolveUrl(url);
   const resolved = resolveStrategy(absoluteUrl);
+  const match = resolved ? resolved.strategy.match(absoluteUrl) : null;
   this._he4rtUrl = absoluteUrl;
   this._he4rtResolved = resolved;
-  this._he4rtEndpoint = resolved ? (resolved.strategy.match(absoluteUrl)?.endpoint ?? null) : null;
+  this._he4rtEndpoint = match?.endpoint ?? null;
+  this._he4rtResponseFormat = match?.responseFormat ?? "json";
   return originalXHROpen.call(this, method, url, async, username ?? null, password ?? null);
 };
 
@@ -133,6 +137,7 @@ XMLHttpRequest.prototype.send = function patchedSend(this: CapturedXMLHttpReques
     const url = this._he4rtUrl || "";
     const endpoint = this._he4rtEndpoint || null;
     const capturedResponseType = this.responseType;
+    const responseFormat = this._he4rtResponseFormat ?? "json";
 
     this.addEventListener("load", async function onLoad() {
       try {
@@ -149,7 +154,8 @@ XMLHttpRequest.prototype.send = function patchedSend(this: CapturedXMLHttpReques
           raw = String(xhr.response);
         }
 
-        const data = JSON.parse(raw);
+        // Hint genérico: "text" emite o corpo cru (stream SDUI/Flight); senão JSON.parse.
+        const data = responseFormat === "text" ? raw : JSON.parse(raw);
         emitFromPayload(resolved, endpoint, url, data);
       } catch (e) {
         console.debug(
