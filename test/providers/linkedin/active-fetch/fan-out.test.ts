@@ -1,13 +1,13 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { createStore } from "../../../../src/background/controller";
 import { runActiveFetch } from "../../../../src/background/active-fetch";
+import { createStore } from "../../../../src/background/controller";
+import { recordProvenance, storePublication } from "../../../../src/background/store";
+import { buildPlatformDataLinkedin } from "../../../../src/providers/linkedin";
 import {
   getCalibration,
   harvestSignature,
   resetCalibration,
 } from "../../../../src/providers/linkedin/active-fetch/calibration";
-import { buildPlatformDataLinkedin } from "../../../../src/providers/linkedin";
-import { recordProvenance, storePublication } from "../../../../src/background/store";
 import type {
   BackgroundStore,
   LinkedInPostData,

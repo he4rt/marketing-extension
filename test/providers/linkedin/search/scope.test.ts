@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { ScopeMode } from "../../../../src/providers/contract";
 import { searchScopeMode } from "../../../../src/providers/linkedin/search/scope";
-import type { SocialProvider, SocialPublication } from "../../../../src/shared/domain";
+import type { SocialPublication } from "../../../../src/shared/domain";
 
 // Cobre o ScopeMode "search" do LinkedIn (#16, spec Passo 5). Diferente do "profile":
 // detectFromPage lê ?keywords= da URL do SRP (Search Results Page); selects() retorna

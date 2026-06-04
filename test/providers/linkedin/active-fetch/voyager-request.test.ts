@@ -16,6 +16,11 @@ function fullCalibration(): CalibrationCache {
   };
 }
 
+function urlOf(req: ReturnType<typeof buildVoyagerRequest>): URL {
+  if (!req) throw new Error("requisição inesperadamente nula");
+  return new URL(req.url);
+}
+
 describe("buildVoyagerRequest (replay autenticado por assinatura colhida)", () => {
   test("sem calibração do endpoint → null (endpoint pulado)", () => {
     expect(buildVoyagerRequest(TARGET, "socialDashReactions", emptyCalibration())).toBeNull();
@@ -41,27 +46,27 @@ describe("buildVoyagerRequest (replay autenticado por assinatura colhida)", () =
     const req = buildVoyagerRequest(TARGET, "socialDashReactions", fullCalibration());
     expect(req).not.toBeNull();
     expect(req?.method).toBe("GET");
-    const u = new URL(req!.url);
+    const u = urlOf(req);
     expect(u.pathname).toBe("/voyager/api/graphql");
     expect(u.searchParams.get("queryId")).toBe("voyagerSocialDashReactions.aaa");
   });
 
   test("variables de reactions carrega a URN da atividade (parser casa /urn:li:activity:\\d+/)", () => {
     const req = buildVoyagerRequest(TARGET, "socialDashReactions", fullCalibration());
-    const vars = new URL(req!.url).searchParams.get("variables") || "";
+    const vars = urlOf(req).searchParams.get("variables") || "";
     expect(vars).toContain("urn:li:activity:111");
   });
 
   test("variables de comments carrega a URN da atividade", () => {
     const req = buildVoyagerRequest(TARGET, "socialDashComments", fullCalibration());
-    expect(new URL(req!.url).searchParams.get("queryId")).toBe("voyagerSocialDashComments.bbb");
-    expect(new URL(req!.url).searchParams.get("variables") || "").toContain("urn:li:activity:111");
+    expect(urlOf(req).searchParams.get("queryId")).toBe("voyagerSocialDashComments.bbb");
+    expect(urlOf(req).searchParams.get("variables") || "").toContain("urn:li:activity:111");
   });
 
   test("variables de reposts carrega targetUrn (parser casa targetUrn:<urn>)", () => {
     const req = buildVoyagerRequest(TARGET, "feedDashReshareFeed", fullCalibration());
-    expect(new URL(req!.url).searchParams.get("queryId")).toBe("voyagerFeedDashReshareFeed.ccc");
-    expect(new URL(req!.url).searchParams.get("variables") || "").toContain(
+    expect(urlOf(req).searchParams.get("queryId")).toBe("voyagerFeedDashReshareFeed.ccc");
+    expect(urlOf(req).searchParams.get("variables") || "").toContain(
       "targetUrn:urn:li:activity:111",
     );
   });
