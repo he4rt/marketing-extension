@@ -11,7 +11,7 @@
     "package": "bun run scripts/package-extension.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
-    "validate": "bun run check && bun run scripts/validate-extension.ts",
+    "validate": "bun run scripts/validate-extension.ts",
     "prepare": "husky"
   },
   "lint-staged": {

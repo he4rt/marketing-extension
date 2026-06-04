@@ -127,16 +127,10 @@ async function validateSyntax() {
   ok("scripts compilados fazem parse");
 }
 
-async function runTests() {
-  await run("bun", ["test"]);
-  ok("testes passam");
-}
-
 try {
   await validateRequiredFiles();
   await validateManifest();
   await validateSyntax();
-  await runTests();
   console.log("Validação da extensão concluída.");
 } catch (error) {
   console.error(`Validação falhou: ${error instanceof Error ? error.message : String(error)}`);

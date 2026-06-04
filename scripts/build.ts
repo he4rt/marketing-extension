@@ -2,6 +2,15 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import manifest from "../src/manifest";
 
+const extVersion = process.env.EXT_VERSION;
+const extVersionName = process.env.EXT_VERSION_NAME;
+
+const finalManifest = {
+  ...manifest,
+  ...(extVersion && { version: extVersion }),
+  ...(extVersionName && { version_name: extVersionName }),
+};
+
 const root = path.resolve(import.meta.dir, "..");
 const distDir = path.join(root, "dist", "chrome");
 
@@ -31,7 +40,7 @@ async function copyFile(from: string, to: string) {
 await rm(distDir, { force: true, recursive: true });
 await mkdir(path.join(distDir, "icons"), { recursive: true });
 
-await writeFile(path.join(distDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+await writeFile(path.join(distDir, "manifest.json"), `${JSON.stringify(finalManifest, null, 2)}\n`);
 
 await buildEntry("src/background/index.ts", "background.js", "esm");
 await buildEntry("src/content/index.ts", "content.js", "iife");
