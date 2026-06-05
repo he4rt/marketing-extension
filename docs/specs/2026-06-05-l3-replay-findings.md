@@ -103,3 +103,66 @@ frágil. Custo NÃO previsto quando se decidiu "tudo de uma vez".
 - `scripts/linkedin/05-voyager-shapes.py` — extrai shapes Voyager de um `.har`.
 - RE ao vivo: `mcp__claude-in-chrome__javascript_tool` (fetch credenciado no contexto da página)
   + `read_network_requests`. ⚠️ ToS: cada fetch ORIGINA tráfego — fazer só com autorização do dono.
+
+---
+
+## 7. Fluxo USER/SYSTEM do aprofundamento L3 (alvo)
+
+```
+ USUÁRIO                                   EXTENSÃO (service worker)
+  │                                            │
+  │  📱 busca "#laraveldaysp"                  │
+  │ ─────────────────────────────────────────►│  SDUI → N posts (activity URN) · metrics PARCIAIS
+  │                                            │  [calib] clientVersion ✓ (queryId_* ainda não)
+  │                                            │
+  │  📱 abre 1 post  /  rola o feed normal     │
+  │ ─────────────────────────────────────────►│  [calib] queryId_reactions/comments/reposts ✓
+  │                                            │          queryId_updates (resolve) ✓ ⟵ a validar (3a)
+  │    ┌────────────────────────────────────┐  │
+  │    │ Aprofundar engajamento (L3)  ✓ on  │  │  isCalibrated() == true → botão habilita
+  │    │ ☐ enviar de verdade                │  │
+  │    └────────────────────────────────────┘  │
+  │                                            │
+  │  ☑ enviar de verdade  +  👆 Aprofundar     │
+  │ ─────────────────────────────────────────►│  refreshAuth: csrf ← cookie JSESSIONID
+  │                                            │  PARA CADA activity (cap 5):
+  │                                            │   ① resolve(activity) → ugcPost + counts
+  │                                            │       └ metrics ← numLikes/reactionTypeCounts/numComments
+  │                                            │   ② reactions(ugcPost) → engagers.reactions
+  │                                            │   ③ comments(ugcPost)  → engagers.comments
+  │                                            │   ④ reposts(ugcPost)   → engagers.reposts
+  │                                            │  merge SEM rebaixar (preserveMetrics)
+  │                                            │  [L3] replay … status=200 · actorsCaptured++
+  │    "✓ 5/5 aprofundados · 42 Actors"        │
+  │ ◄──────────────────────────────────────────│
+  │  👆 Exportar Dados → payload COMPLETO       │
+  │ ─────────────────────────────────────────►│  metrics + engagers preenchidos por post
+```
+
+---
+
+## 8. Plano de implementação (próxima sessão)
+
+Pré-requisito de RE (fazer 1º, ao vivo, com autorização do dono): **resolver o item 3** —
+ou confirmar um endpoint de resolve LEGÍVEL (caminho 4.2), ou aceitar o decoder microSchema (4.1).
+Sem isso travado, o resto não fecha.
+
+1. **Seam de resolve.** `ActiveFetchFacet` ganha `resolveTarget(target, calib) → { ugcPost, counts }`
+   (opcional; rede só na faceta do provider, como `refreshAuth`). LinkedIn: GET
+   `voyagerFeedDashUpdates(backendUrnOrNss:<activity>)`.
+2. **Parser do resolve.** Novo módulo `providers/linkedin/active-fetch/resolve-parser.ts` extrai
+   `threadUrn`(ugcPost) + `reactionTypeCounts`/`numLikes`/`numComments` — lidando com microSchema
+   se for o caso (3b). PURO, testável com fixture.
+3. **Scheduler.** Antes do fan-out de um alvo, chama `resolveTarget`; injeta `ugcPost` no alvo e
+   grava as `metrics`/`reaction_breakdown` no store (preenche TODOS os posts, não só os da busca).
+4. **endpoints.ts.** `buildVariables` passa a usar o **ugcPost** do alvo resolvido (não o activity).
+   Hoje usam `target.activityUrn` → trocar por `target.ugcPost`.
+5. **queryId_updates.** Adicionar `voyagerFeedDashUpdates` à calibração (`QUERY_ID_PREFIX_TO_FIELD`),
+   colhido do feed normal (validar 3a). `isCalibrated` passa a exigir o queryId do resolve também.
+6. **Bug #5 (má-associação).** Quando a captura passiva de reactions vier com `parentUrn` = ugcPost,
+   mapear de volta para o activity do post (via o ugcPost que o resolve guardou) antes de associar.
+7. **Gates + HITL.** Unit tests (resolve-parser, scheduler com resolve, endpoints com ugcPost) +
+   validação no browser: 1 busca → Aprofundar real → export com metrics+engagers em TODOS os posts.
+   Golden-master intacto (o L3 não roda no teste de captura passiva).
+
+> Política mantida: dry-run por padrão, cap 5 alvos, parada graciosa, csrf via cookie (nunca em msg).

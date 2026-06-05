@@ -2,6 +2,11 @@
 
 > Data: 2026-06-03 · Branch: `feat/linkedin-search` · ADR: [0004](../adr/0004-linkedin-search-scope-active-fetch.md)
 > (estende [ADR-0003](../adr/0003-active-fetch-provider-devto.md), dependência pendente)
+>
+> ⚠️ **Atualização 2026-06-05:** o replay do L3 foi validado ao vivo e descobriu-se que
+> reactions/comments/reposts **exigem o `ugcPost`** (o `activity` dá 200 vazio) — precisa de um
+> estágio de **resolve** `activity→ugcPost`. Detalhes, mapa campo→fonte e plano de implementação
+> em **[findings 2026-06-05](2026-06-05-l3-replay-findings.md)**.
 
 ## Objetivo
 
