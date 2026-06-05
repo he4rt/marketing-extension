@@ -41,6 +41,7 @@ type DiscoveryEls = {
   count: HTMLElement;
   sub: HTMLElement;
   deepenBtn: HTMLButtonElement | null;
+  realLabel: HTMLElement | null; // label do checkbox "enviar de verdade" (acompanha o botão).
 };
 
 function resolveEls(doc: Document): DiscoveryEls | null {
@@ -51,6 +52,7 @@ function resolveEls(doc: Document): DiscoveryEls | null {
     count,
     sub,
     deepenBtn: doc.getElementById("liDeepenBtn") as HTMLButtonElement | null,
+    realLabel: doc.getElementById("liDeepenRealLabel"),
   };
 }
 
@@ -72,6 +74,8 @@ export function renderLinkedInDiscovery(
   // Ponto de extensão #18: o botão L3 só aparece quando há posts descobertos; fica
   // desabilitado enquanto a assinatura Voyager não foi calibrada (tooltip orienta o usuário).
   renderDeepenButton(els.deepenBtn, signals);
+  // O checkbox "enviar de verdade" acompanha a visibilidade do botão (só com posts descobertos).
+  els.realLabel?.classList.toggle("hidden", signals.discovered <= 0);
 }
 
 function renderDeepenButton(

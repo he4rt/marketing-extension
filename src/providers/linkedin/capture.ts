@@ -1,5 +1,5 @@
 import type { EmbeddedCodeScanStrategy, NetworkInterceptStrategy } from "../../capture/strategies";
-import { harvestSignature } from "./active-fetch/calibration";
+import { signatureFromHeaders } from "./signature";
 
 // Estratégias de captura do LinkedIn. Lógica MOVIDA, sem reescrita:
 //  - networkIntercept: extractLinkedInEndpointName do antigo src/interceptor/index.ts
@@ -55,22 +55,25 @@ function extractLinkedInEndpointName(url: string) {
 
 export const linkedinNetworkIntercept: NetworkInterceptStrategy = {
   kind: "networkIntercept",
-  match(url) {
+  match(url, init) {
+    // Assinatura L3: encaminha x-li-track (→ clientVersion) ao SW, onde a calibração vive.
+    // O csrf NÃO entra aqui (o SW o lê do cookie JSESSIONID). O harvest acontece no SW, não
+    // no MAIN — este match roda no interceptor (contexto separado do service worker).
+    const signature = signatureFromHeaders(init?.headers);
     // Estágio 1 — descoberta SDUI: o SRP de busca devolve um stream Flight (texto).
     if (url.includes(LINKEDIN_SEARCH_PATH)) {
-      return { endpoint: "searchResultsContent", responseFormat: "text" };
+      return { endpoint: "searchResultsContent", responseFormat: "text", signature };
     }
     // Métricas preguiçosas: pagination/component da busca trazem posts + contadores.
     // Só na SRP (a mesma rota serve o feed) — o merge por URN acontece no processCapture.
     if (onLinkedInSearchPage() && LINKEDIN_RSC_SEARCH_PATHS.some((p) => url.includes(p))) {
-      return { endpoint: "searchResultsContent", responseFormat: "text" };
+      return { endpoint: "searchResultsContent", responseFormat: "text", signature };
     }
     const endpoint = extractLinkedInEndpointName(url);
     if (!endpoint) return null;
-    // Harvest-and-cache: ao ver tráfego Voyager passivo (ex.: usuário abre um post),
-    // colhe a assinatura volátil (queryId/clientVersion) p/ o Active Fetch (L3) replicar.
-    harvestSignature(url);
-    return { endpoint };
+    // Tráfego Voyager (ex.: post aberto): a URL traz o queryId; o x-li-track traz o
+    // clientVersion. Ambos seguem ao SW (queryId via url da mensagem, clientVersion na signature).
+    return { endpoint, signature };
   },
 };
 

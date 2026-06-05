@@ -3,6 +3,8 @@
 // some no reload do SW. Núcleo PURO: nenhuma leitura de chrome.* aqui; o csrf-token chega
 // já resolvido (= cookie JSESSIONID, lido na borda) via header em harvestSignature.
 
+import { logHe4rt } from "../../../shared/log";
+
 // Prefixo do queryId Voyager (segmento antes do primeiro ".") → campo da calibração.
 const QUERY_ID_PREFIX_TO_FIELD: Record<string, keyof CalibrationCache> = {
   voyagerSocialDashReactions: "queryId_reactions",
@@ -40,6 +42,13 @@ let singleton: CalibrationCache = emptyCalibration();
 
 export function getCalibration(): CalibrationCache {
   return singleton;
+}
+
+// Injeta o csrf-token (=JSESSIONID sem aspas) colhido fora do tráfego — ex.: lido do cookie
+// pelo SW em tempo de replay. Separado do harvest de headers (que não vê o csrf no SW).
+export function setCsrfToken(value: string | null): void {
+  singleton.csrfToken = value;
+  if (value) singleton.lastUpdated = new Date().toISOString();
 }
 
 // Reset — usado em testes para isolar cenários do harvest (efeito colateral no singleton).
@@ -98,7 +107,19 @@ export function harvestSignature(url: string, headers?: Record<string, string>):
     }
   }
 
-  if (mudou) singleton.lastUpdated = new Date().toISOString();
+  if (mudou) {
+    singleton.lastUpdated = new Date().toISOString();
+    // Qualitativo: quais campos da assinatura L3 já temos. Só dispara quando ALGO novo foi
+    // colhido (naturalmente throttled). É a prova de que csrf/clientVersion/queryId vêm do
+    // tráfego real — e, por omissão de um campo, o que ainda falta para habilitar o replay.
+    logHe4rt("calib", `assinatura atualizada · calibrado=${isCalibrated(singleton)}`, {
+      csrf: singleton.csrfToken ? "ok" : null,
+      clientVersion: singleton.clientVersion,
+      queryId_reactions: singleton.queryId_reactions ? "ok" : null,
+      queryId_comments: singleton.queryId_comments ? "ok" : null,
+      queryId_reposts: singleton.queryId_reposts ? "ok" : null,
+    });
+  }
 }
 
 function lowercaseKeys(headers: Record<string, string>): Record<string, string> {

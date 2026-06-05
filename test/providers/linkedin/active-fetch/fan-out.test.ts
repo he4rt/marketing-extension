@@ -7,6 +7,7 @@ import {
   getCalibration,
   harvestSignature,
   resetCalibration,
+  setCsrfToken,
 } from "../../../../src/providers/linkedin/active-fetch/calibration";
 import type {
   BackgroundStore,
@@ -129,10 +130,12 @@ describe("Active Fetch fan-out (scheduler L3: reactions + comments + reposts)", 
   beforeEach(() => {
     resetCalibration();
     seenUrls.length = 0;
-    // Calibra os 3 endpoints + csrf (sem ele buildVoyagerRequest devolve null).
-    harvestSignature(REACTIONS_URL, { "csrf-token": "ajax:sess" });
+    // Calibra os 3 queryId (via URL) + csrf via setCsrfToken (simula a leitura do cookie no
+    // SW; em runtime vem de facet.refreshAuth → chrome.cookies, indisponível no teste).
+    harvestSignature(REACTIONS_URL);
     harvestSignature(COMMENTS_URL);
     harvestSignature(RESHARE_URL);
+    setCsrfToken("ajax:sess");
     // Stub de fetch: registra a URL e devolve a fixture roteada.
     (globalThis as { fetch: unknown }).fetch = async (input: Request | string) => {
       const url = typeof input === "string" ? input : input.url;
@@ -149,7 +152,7 @@ describe("Active Fetch fan-out (scheduler L3: reactions + comments + reposts)", 
     const store = createStore("");
     seedSearchPost(store);
 
-    const status = await runActiveFetch(store, "linkedin");
+    const status = await runActiveFetch(store, "linkedin", false); // false = replay real
 
     expect(status.running).toBe(false);
     expect(status.error).toBeUndefined();
@@ -166,7 +169,7 @@ describe("Active Fetch fan-out (scheduler L3: reactions + comments + reposts)", 
   test("comments (comentaristas + texto) entram no store via processCapture", async () => {
     const store = createStore("");
     seedSearchPost(store);
-    await runActiveFetch(store, "linkedin");
+    await runActiveFetch(store, "linkedin", false);
 
     const lstore = store.platforms.linkedin.extra;
     const commentEntry = lstore.comments[ACTIVITY_URN];
@@ -180,7 +183,7 @@ describe("Active Fetch fan-out (scheduler L3: reactions + comments + reposts)", 
   test("reposts entram no store via processCapture", async () => {
     const store = createStore("");
     seedSearchPost(store);
-    await runActiveFetch(store, "linkedin");
+    await runActiveFetch(store, "linkedin", false);
 
     const repostEntry = store.platforms.linkedin.extra.reposts[ACTIVITY_URN];
     expect(repostEntry).toBeDefined();
@@ -190,7 +193,7 @@ describe("Active Fetch fan-out (scheduler L3: reactions + comments + reposts)", 
   test("a riqueza do LinkedIn (engagement_metrics) e a Provenance search sobrevivem no export", async () => {
     const store = createStore("");
     seedSearchPost(store);
-    await runActiveFetch(store, "linkedin");
+    await runActiveFetch(store, "linkedin", false);
 
     const platform = buildPlatformDataLinkedin(store);
     const item = platform.content.find((p) => p.activity_urn === ACTIVITY_URN);
@@ -223,5 +226,56 @@ describe("Active Fetch fan-out (scheduler L3: reactions + comments + reposts)", 
 
     expect(seenUrls).toHaveLength(0);
     expect(status.error).toBe("uncalibrated");
+  }, 15000);
+
+  // Gate de ToS (Step 4): dry-run é o DEFAULT. Monta+loga os requests, mas NÃO origina
+  // tráfego. O plano é construído (total > 0), os passos contam como done, e nada consolida.
+  test("dry-run (default) não envia request algum, mas conta o plano", async () => {
+    const store = createStore("");
+    seedSearchPost(store);
+
+    const status = await runActiveFetch(store, "linkedin"); // sem flag = dry-run
+
+    expect(status.dryRun).toBe(true);
+    expect(status.error).toBeUndefined();
+    expect(status.total).toBe(3); // o plano é montado normalmente (1 alvo × 3 endpoints)
+    expect(status.done).toBe(3);
+    expect(seenUrls).toHaveLength(0); // fetch NUNCA foi chamado
+    expect(status.actorsCaptured).toBe(0); // nada consolidado no store
+  }, 15000);
+
+  // Cap de volume (Step 3): com mais alvos que MAX_ALVOS_POR_RUN (5), o plano cobre só os 5
+  // primeiros da ordem do feed. Roda em dry-run para isolar a contagem sem tocar a rede.
+  test("cap de volume: 7 posts descobertos → só 5 alvos no plano", async () => {
+    const store = createStore("");
+    const lstore = store.platforms.linkedin.extra;
+    for (let i = 0; i < 7; i++) {
+      const urn = `urn:li:activity:90${i}`;
+      lstore.posts[urn] = {
+        id: urn,
+        activity_urn: urn,
+        share_urn: "",
+        text: "",
+        type: "original",
+        author: { urn: "", name: "", headline: "", avatar_url: "", vanity_name: "" },
+        metrics: {
+          like_count: 0,
+          comment_count: 0,
+          share_count: 0,
+          total_reactions: 0,
+          reaction_breakdown: {},
+        },
+        hashtags: [],
+        media: [],
+        created_at: "",
+        timestamp_text: "",
+        source: "search_sdui",
+      };
+      lstore.feedOrder.push(urn);
+    }
+
+    const status = await runActiveFetch(store, "linkedin"); // dry-run
+
+    expect(status.total).toBe(15); // 5 alvos (cap) × 3 endpoints calibrados, não 21
   }, 15000);
 });

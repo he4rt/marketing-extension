@@ -1,7 +1,9 @@
 import { captureFacetForHost } from "../capture/registry";
 import type { NetworkInterceptStrategy } from "../capture/strategies";
 import type { SocialProvider } from "../shared/domain";
+import { approxBytes, logHe4rt } from "../shared/log";
 import type { PageCapturedMessage } from "../shared/messages";
+import { normalizeHeaders } from "./headers";
 
 // Motor de captura de rede (MAIN world). Antes este arquivo carregava um if-cascade por
 // provider (extractX/LinkedIn/InstagramEndpointName, markers, infer*). Agora ele só patcheia
@@ -32,8 +34,15 @@ function shouldIntercept(strategy: NetworkInterceptStrategy, endpoint: string | 
   return Boolean(endpoint) || Boolean(strategy.gate);
 }
 
-function postPayload(provider: SocialProvider, endpoint: string, url: string, payload: unknown) {
-  console.log(`[He4rt Analytics] captura ${provider}:${endpoint}`);
+function postPayload(
+  provider: SocialProvider,
+  endpoint: string,
+  url: string,
+  payload: unknown,
+  signature?: Record<string, string>,
+) {
+  // Qualitativo (provider:endpoint) + quantitativo (bytes do corpo) da RESPOSTA emitida.
+  logHe4rt("net", `✓ captura ${provider}:${endpoint} · ${approxBytes(payload)}B`, url);
   window.postMessage(
     {
       type: "SOCIAL_CAPTURED",
@@ -41,6 +50,7 @@ function postPayload(provider: SocialProvider, endpoint: string, url: string, pa
       endpoint,
       url,
       payload,
+      signature, // assinatura L3 (subconjunto de headers) p/ o harvest no SW; pode ser undefined.
     } satisfies PageCapturedMessage,
     "*",
   );
@@ -48,18 +58,19 @@ function postPayload(provider: SocialProvider, endpoint: string, url: string, pa
 
 // Aplica gate + rename da estratégia e posta, se o endpoint final for válido. Reproduz o
 // antigo inspectResponse: linkedin/x postam só com endpoint; instagram passa pelo gate e
-// reclassifica o endpoint pelo payload antes de postar.
+// reclassifica o endpoint pelo payload antes de postar. `signature` vem do NetworkMatch.
 function emitFromPayload(
   resolved: ResolvedStrategy,
   endpoint: string | null,
   url: string,
   payload: unknown,
+  signature?: Record<string, string>,
 ) {
   const { provider, strategy } = resolved;
   if (strategy.gate && !strategy.gate(payload, endpoint)) return;
   const finalEndpoint = strategy.rename ? strategy.rename(payload, endpoint) : endpoint;
   if (!finalEndpoint) return;
-  postPayload(provider, finalEndpoint, url, payload);
+  postPayload(provider, finalEndpoint, url, payload, signature);
 }
 
 const originalFetch = window.fetch;
@@ -74,15 +85,29 @@ window.fetch = function patchedFetch(this: typeof window, ...args: Parameters<ty
   const resolved = resolveStrategy(url);
 
   if (resolved) {
-    const match = resolved.strategy.match(url, init ? { body: init.body } : null);
+    // Repassa os headers da requisição (csrf-token/x-li-track) para o match() colher a
+    // assinatura do L3 (calibração). Fonte: Request e/ou init (ver normalizeHeaders).
+    const headers = normalizeHeaders(resource, init);
+    const match = resolved.strategy.match(url, { body: init?.body ?? null, headers });
     const endpoint = match?.endpoint ?? null;
     if (match && shouldIntercept(resolved.strategy, endpoint)) {
+      // REQUEST: transporte (fetch), endpoint e presença dos headers de assinatura. x-li-track
+      // é o que ENCAMINHAMOS ao SW (clientVersion); csrf é só informativo (o SW lê do cookie).
+      logHe4rt("net", `→ fetch ${resolved.provider}:${endpoint ?? "?"}`, {
+        url,
+        "x-li-track": headers["x-li-track"] ? "forwarded" : null,
+        csrf: headers["csrf-token"] ? "present (cookie no SW)" : null,
+      });
       return originalFetch.apply(this, args).then(async (response) => {
         try {
           const clone = response.clone();
           // Hint genérico: "text" lê o corpo cru (stream SDUI/Flight); senão json().
           const data = match.responseFormat === "text" ? await clone.text() : await clone.json();
-          emitFromPayload(resolved, endpoint, url, data);
+          logHe4rt(
+            "net",
+            `← fetch ${resolved.provider}:${endpoint ?? "?"} · status=${response.status}`,
+          );
+          emitFromPayload(resolved, endpoint, url, data, match.signature);
         } catch {}
         return response;
       });
@@ -138,6 +163,11 @@ XMLHttpRequest.prototype.send = function patchedSend(this: CapturedXMLHttpReques
     const endpoint = this._he4rtEndpoint || null;
     const capturedResponseType = this.responseType;
     const responseFormat = this._he4rtResponseFormat ?? "json";
+
+    // REQUEST (xhr): atenção — o path XHR NÃO threada headers ao match(), então a assinatura
+    // L3 (csrf/x-li-track) deste tráfego não é colhida. Se tráfego relevante aparecer aqui,
+    // é sinal para estender o harvest ao setRequestHeader (ver plano, follow-up XHR).
+    logHe4rt("net", `→ xhr ${resolved.provider}:${endpoint ?? "?"} (headers não colhidos)`, url);
 
     this.addEventListener("load", async function onLoad() {
       try {

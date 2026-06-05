@@ -11,6 +11,11 @@ export const DELAY_PADRAO_MS = 1200;
 // Delay extra ao bater rate-limit (429): respeita o backoff antes de seguir, sem repetir.
 export const DELAY_RATE_LIMIT_MS = 5000;
 
+// Volume conservador do fan-out: limita os alvos por execução para reduzir a exposição a
+// bot-detection (PerimeterX/Cloudflare). Pega os primeiros da ordem do feed (os top posts,
+// que mais sofrem com metrics:0). On-demand — o usuário pode repetir para aprofundar mais.
+export const MAX_ALVOS_POR_RUN = 5;
+
 // Espera não-bloqueante. setTimeout via Promise (service worker friendly).
 export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));

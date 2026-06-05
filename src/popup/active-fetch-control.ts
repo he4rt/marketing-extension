@@ -30,19 +30,29 @@ const ERROR_LABELS: Record<string, string> = {
 type Els = {
   btn: HTMLButtonElement;
   progress: HTMLElement;
+  real: HTMLInputElement | null; // checkbox "enviar de verdade" (gate de ToS); ausente = dry-run.
 };
 
 function resolveEls(doc: Document): Els | null {
   const btn = doc.getElementById("liDeepenBtn") as HTMLButtonElement | null;
   const progress = doc.getElementById("liDeepenProgress");
   if (!btn || !progress) return null;
-  return { btn, progress };
+  const real = doc.getElementById("liDeepenReal") as HTMLInputElement | null;
+  return { btn, progress, real };
 }
 
 // Texto de progresso a partir do status: "k/N · M Actors" enquanto roda;
 // "✓ N aprofundados · M Actors" ao concluir; mensagem de erro quando houver.
 export function progressLabel(status: ActiveFetchStatusResponse): string {
   if (status.error) return ERROR_LABELS[status.error] ?? FALLBACK_ERROR;
+  // No dry-run nada é enviado: rotula como "planejados" e avisa que ninguém foi acionado.
+  if (status.dryRun) {
+    if (status.running) return `Simulando ${status.done}/${status.total}…`;
+    if (status.finishedAt) {
+      return `✓ ${status.done}/${status.total} planejados · dry-run (nada enviado)`;
+    }
+    return "";
+  }
   const actors = `${status.actorsCaptured} ${status.actorsCaptured === 1 ? "Actor" : "Actors"}`;
   if (status.running) return `Aprofundando ${status.done}/${status.total} · ${actors}`;
   if (status.finishedAt) return `✓ ${status.done}/${status.total} aprofundados · ${actors}`;
@@ -84,6 +94,8 @@ function pollUntilDone(els: Els, send: Messenger): void {
 // Dispara o fan-out e inicia o polling. O background devolve o status inicial (já running
 // ou já com erro de calibração); a partir dele decidimos se há o que poll-ar.
 function startDeepen(els: Els, send: Messenger): void {
+  // Gate de ToS: só dispara tráfego real quando "enviar de verdade" está marcado.
+  const dryRun = !els.real?.checked;
   setRunning(els, true);
   showProgress(els, {
     running: true,
@@ -92,8 +104,9 @@ function startDeepen(els: Els, send: Messenger): void {
     actorsCaptured: 0,
     startedAt: null,
     finishedAt: null,
+    dryRun,
   });
-  send({ action: "RUN_ACTIVE_FETCH", provider: "linkedin" }, (status) => {
+  send({ action: "RUN_ACTIVE_FETCH", provider: "linkedin", dryRun }, (status) => {
     if (!status) {
       setRunning(els, false);
       return;

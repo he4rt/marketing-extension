@@ -10,26 +10,28 @@ import type { BackgroundProviderFacet } from "../providers/contract";
 import { linkedinProvider } from "../providers/linkedin";
 import { getCalibration } from "../providers/linkedin/active-fetch/calibration";
 import { linkedinActiveFetchFacet } from "../providers/linkedin/active-fetch/facet";
-import type { BackgroundStore, NormalizedStore, SocialProvider } from "../shared/domain";
+import type { BackgroundStore, SocialProvider } from "../shared/domain";
+import { logHe4rt } from "../shared/log";
 import {
   classifyStatus,
   DELAY_PADRAO_MS,
   DELAY_RATE_LIMIT_MS,
   ERRO_REDE,
   isFatal,
+  MAX_ALVOS_POR_RUN,
   type StatusKind,
   sleep,
 } from "./active-fetch-policy";
+import {
+  type ActiveFetchStatus,
+  countActors,
+  emptyStatus,
+  getActiveFetchStatus,
+  setActiveFetchStatus,
+} from "./active-fetch-status";
 
-export type ActiveFetchStatus = {
-  running: boolean;
-  total: number; // alvos × endpoints calibrados (planejados antes do fan-out)
-  done: number; // requisições concluídas (sucesso ou pulo)
-  actorsCaptured: number; // Actors novos consolidados no store durante o run
-  startedAt: string | null;
-  finishedAt: string | null;
-  error?: string; // "uncalibrated" | "session_expired" | "rate_limited" | "error"
-};
+// Re-export para os consumidores atuais (controller) seguirem importando daqui.
+export { type ActiveFetchStatus, getActiveFetchStatus };
 
 // Registries locais (caminho ATIVO). Importar daqui evita o ciclo controller↔active-fetch.
 const ACTIVE_FETCH_FACETS: Partial<Record<SocialProvider, ActiveFetchFacet>> = {
@@ -39,32 +41,6 @@ const PROCESSORS: Partial<Record<SocialProvider, BackgroundProviderFacet>> = {
   linkedin: linkedinProvider,
 };
 
-// Singleton de status por provider (lido pelo polling GET_ACTIVE_FETCH_STATUS).
-const statusByProvider: Partial<Record<SocialProvider, ActiveFetchStatus>> = {};
-
-function emptyStatus(): ActiveFetchStatus {
-  return {
-    running: false,
-    total: 0,
-    done: 0,
-    actorsCaptured: 0,
-    startedAt: null,
-    finishedAt: null,
-  };
-}
-
-export function getActiveFetchStatus(provider: SocialProvider): ActiveFetchStatus {
-  return statusByProvider[provider] ?? emptyStatus();
-}
-
-// Total de engagements (Actors) consolidados no store per-platform (base do delta do run).
-function countActors(store: BackgroundStore, provider: SocialProvider): number {
-  const pstore = store.platforms[provider] as NormalizedStore;
-  let total = 0;
-  for (const list of Object.values(pstore.engagementsByPublication)) total += list.length;
-  return total;
-}
-
 // UMA requisição (alvo, endpoint): fetch credenciado → envelope sintético → processCapture.
 // Devolve o StatusKind para o loop decidir parar/atrasar/seguir.
 async function runOne(
@@ -73,12 +49,20 @@ async function runOne(
   processor: BackgroundProviderFacet,
   target: ReturnType<ActiveFetchFacet["enumerate"]>[number],
   endpoint: string,
+  dryRun: boolean,
 ): Promise<StatusKind> {
   const request = facet.buildRequest(target, endpoint, getCalibration());
   if (!request) return "ok"; // não calibrado p/ este endpoint → pula sem abortar.
+  if (dryRun) {
+    // Gate de ToS: monta o request real e LOGA, mas NÃO origina tráfego. actorsCaptured
+    // permanece 0 (nada é consolidado). Conta como passo concluído para o progresso.
+    logHe4rt("L3", `dry-run ${endpoint} → ${request.url}`);
+    return "ok";
+  }
   try {
     const response = await fetch(request);
     const kind = classifyStatus(response.status);
+    logHe4rt("L3", `replay ${endpoint} · status=${response.status} (${kind})`);
     if (kind !== "ok") return kind;
     const payload = await response.json();
     const envelope = facet.synthEnvelope(target, endpoint, payload, request.url);
@@ -94,17 +78,23 @@ async function runOne(
 export async function runActiveFetch(
   store: BackgroundStore,
   provider: SocialProvider,
+  dryRun = true,
 ): Promise<ActiveFetchStatus> {
   const facet = ACTIVE_FETCH_FACETS[provider];
   const processor = PROCESSORS[provider];
   if (!facet || !processor) {
-    const s = { ...emptyStatus(), error: "error" as const };
-    statusByProvider[provider] = s;
+    const s = { ...emptyStatus(), dryRun, error: "error" as const };
+    setActiveFetchStatus(provider, s);
     return s;
   }
 
-  // Plano: alvos × endpoints calibrados (buildRequest != null sinaliza calibração).
-  const targets = facet.enumerate(store);
+  // Renova credenciais voláteis (LinkedIn: csrf do cookie JSESSIONID) antes de montar os
+  // requests — sem isto, buildVoyagerRequest devolveria null por falta de csrf.
+  await facet.refreshAuth?.();
+
+  // Plano: alvos × endpoints calibrados (buildRequest != null sinaliza calibração). O cap
+  // de volume pega só os primeiros da ordem do feed (conservador — ver MAX_ALVOS_POR_RUN).
+  const targets = facet.enumerate(store).slice(0, MAX_ALVOS_POR_RUN);
   const calib = getCalibration();
   const plano: Array<{ target: (typeof targets)[number]; endpoint: string }> = [];
   for (const target of targets) {
@@ -118,20 +108,28 @@ export async function runActiveFetch(
     running: true,
     total: plano.length,
     startedAt: new Date().toISOString(),
+    dryRun,
   };
-  statusByProvider[provider] = status;
+  setActiveFetchStatus(provider, status);
+
+  // Quantitativo: alvos enumerados, passos calibrados e modo (dry-run vs real).
+  logHe4rt(
+    "L3",
+    `plano ${provider}: ${targets.length} alvos · ${plano.length} passos · ${dryRun ? "dry-run" : "REAL"}`,
+  );
 
   if (plano.length === 0) {
     status.running = false;
     status.error = "uncalibrated";
     status.finishedAt = new Date().toISOString();
+    logHe4rt("L3", `plano vazio → uncalibrated (assinatura incompleta?)`);
     return status;
   }
 
   for (let i = 0; i < plano.length; i++) {
     const passo = plano[i];
     if (!passo) continue;
-    const kind = await runOne(store, facet, processor, passo.target, passo.endpoint);
+    const kind = await runOne(store, facet, processor, passo.target, passo.endpoint, dryRun);
     status.done = i + 1;
     status.actorsCaptured = countActors(store, provider) - actorsBefore;
 
@@ -139,7 +137,8 @@ export async function runActiveFetch(
       status.error = kind; // "session_expired" | "error" (isFatal garante o narrow).
       break;
     }
-    if (i < plano.length - 1) {
+    // Em dry-run nada toca a rede → não há rate-limit a respeitar; pula o delay.
+    if (!dryRun && i < plano.length - 1) {
       await sleep(kind === "rate_limited" ? DELAY_RATE_LIMIT_MS : DELAY_PADRAO_MS);
     }
   }

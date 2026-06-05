@@ -8,6 +8,9 @@ export type CapturedPayloadMessage = {
   provider: SocialProvider;
   timestamp: string;
   url?: string;
+  // Assinatura volátil colhida da REQUISIÇÃO (subconjunto de headers) para o harvest L3 no
+  // SW. Ex.: { "x-li-track": "..." } → clientVersion. NUNCA carrega o csrf (lido do cookie).
+  signature?: Record<string, string>;
 };
 
 export type GraphqlCapturedMessage = Omit<CapturedPayloadMessage, "action" | "provider"> & {
@@ -177,6 +180,9 @@ export type DetectTargetResponse = {
 export type RunActiveFetchMessage = {
   action: "RUN_ACTIVE_FETCH";
   provider: SocialProvider;
+  // Gate de ToS: dry-run monta+loga os requests sem originar tráfego. Default (ausente) =
+  // dry-run no caminho do popup; só `false` explícito dispara os fetch reais do Voyager.
+  dryRun?: boolean;
 };
 
 export type GetActiveFetchStatusMessage = {
@@ -193,6 +199,7 @@ export type ActiveFetchStatusResponse = {
   actorsCaptured: number; // Actors novos consolidados durante o run
   startedAt: string | null;
   finishedAt: string | null;
+  dryRun: boolean; // true = nenhum request foi enviado (montou+logou só).
   error?: string; // "uncalibrated" | "session_expired" | "rate_limited" | "error"
 };
 
@@ -227,6 +234,9 @@ export type PageCapturedMessage = {
   provider: SocialProvider;
   type: "SOCIAL_CAPTURED";
   url?: string;
+  // Subconjunto de headers da requisição a encaminhar ao SW para o harvest L3 (ver
+  // CapturedPayloadMessage.signature). Vem de NetworkMatch.signature, definido pelo provider.
+  signature?: Record<string, string>;
 };
 
 export type PageGraphqlMessage = {

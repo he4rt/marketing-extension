@@ -5,6 +5,7 @@ import type {
   SocialMetrics,
   SocialPublication,
 } from "../../../shared/domain";
+import { logHe4rt } from "../../../shared/log";
 import type { CapturedPayloadMessage } from "../../../shared/messages";
 import { publicationKey } from "../../shared/utils";
 import { parseLinkedInSearchSdui } from "./sdui";
@@ -127,12 +128,19 @@ function logSearchDiagnostics(
   publications: SocialPublication[],
   unreadable: number,
 ): void {
-  const withMetrics = publications.filter(
-    (p) => p.metrics.like_count + p.metrics.comment_count + p.metrics.repost_count > 0,
-  ).length;
+  const temMetrica = (p: SocialPublication) =>
+    p.metrics.like_count + p.metrics.comment_count + p.metrics.repost_count > 0;
+  const withMetrics = publications.filter(temMetrica).length;
   const escopo = query ? `busca "${query}"` : "busca (sem query)";
-  console.info(
-    `[He4rt Analytics] ${escopo} · ${publications.length} descobertos · ` +
-      `${unreadable} ilegíveis · ${withMetrics}/${publications.length} com métricas`,
+  // Quantitativo: descobertos / ilegíveis / saúde das métricas.
+  logHe4rt(
+    "busca",
+    `${escopo} · ${publications.length} descobertos · ${unreadable} ilegíveis · ` +
+      `${withMetrics}/${publications.length} com métricas`,
   );
+  // Qualitativo: quem foi descoberto e QUAIS posts estão zerados (os alvos do L3 Active Fetch).
+  logHe4rt("busca", "descobertos", {
+    autores: publications.map((p) => p.author.name),
+    sem_metricas: publications.filter((p) => !temMetrica(p)).map((p) => p.publication_id),
+  });
 }

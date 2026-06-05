@@ -543,7 +543,7 @@ export function handleRuntimeMessage(
     BACKGROUND_PROVIDERS[capture.provider].processCapture(store, capture);
     const added = providerPublicationCount(store, capture.provider) - before;
     context.log?.(
-      `[He4rt Analytics] ${capture.provider}:${capture.endpoint} · +${added} ` +
+      `[He4rt Analytics] [store] ${capture.provider}:${capture.endpoint} · +${added} ` +
         `(total ${capture.provider}: ${providerPublicationCount(store, capture.provider)})`,
     );
     return { success: true };
@@ -790,7 +790,8 @@ export function handleRuntimeMessage(
   // GET é o polling síncrono do singleton de status. A lógica de fan-out vive em
   // src/background/active-fetch.ts (sem inchar o controller).
   if (request.action === "RUN_ACTIVE_FETCH") {
-    return runActiveFetch(store, request.provider);
+    // Default seguro: sem `dryRun` explícito, NÃO origina tráfego (gate de ToS).
+    return runActiveFetch(store, request.provider, request.dryRun ?? true);
   }
 
   if (request.action === "GET_ACTIVE_FETCH_STATUS") {

@@ -15,7 +15,8 @@ const manifest = {
   name: "He4rt Analytics",
   version: "1.0.0",
   description: "Captura engajamento social da comunidade He4rt Developers",
-  permissions: ["storage", "tabs", "unlimitedStorage"],
+  // "cookies": o SW lê o JSESSIONID (csrf) de linkedin.com para o replay credenciado do L3.
+  permissions: ["storage", "tabs", "unlimitedStorage", "cookies"],
   host_permissions: hostPermissions,
   background: {
     service_worker: "background.js",

@@ -22,6 +22,7 @@ import type {
 import type { CapturedPayloadMessage } from "../../shared/messages";
 import type { BackgroundProviderFacet, ScopeMode } from "../contract";
 import { publicationKey } from "../shared/utils";
+import { harvestSignature } from "./active-fetch/calibration";
 import {
   linkedinFeedAccountInfo,
   linkedinFeedToPosts,
@@ -34,6 +35,11 @@ import { processLinkedInSearchCapture, SEARCH_ENDPOINT } from "./search/process"
 import { searchScopeMode } from "./search/scope";
 
 export function processLinkedInCapture(store: BackgroundStore, request: CapturedPayloadMessage) {
+  // Harvest L3 (no SW — fonte única de verdade): colhe a assinatura volátil de toda captura
+  // LinkedIn. queryId vem da URL Voyager; clientVersion vem da signature (x-li-track). O csrf
+  // NÃO é colhido aqui — o scheduler o lê do cookie JSESSIONID em tempo de replay.
+  if (request.url) harvestSignature(request.url, request.signature);
+
   // A riqueza bespoke do LinkedIn vive em platforms.linkedin.extra (LinkedInExtra).
   const lstore = store.platforms.linkedin.extra;
   const handle = trackedHandleForProvider(store, "linkedin");

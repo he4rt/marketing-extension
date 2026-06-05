@@ -14,6 +14,7 @@ import type {
   SyntheticCapture,
 } from "../../../capture/active-fetch";
 import type { CalibrationCache } from "./calibration";
+import { refreshCsrfFromCookie } from "./csrf";
 import { endpointDescriptor, type VoyagerEndpointId, voyagerEndpointIds } from "./endpoints";
 import { enumerateTargets } from "./targets";
 import { buildVoyagerRequest } from "./voyager-request";
@@ -25,6 +26,9 @@ function asVoyagerEndpoint(endpoint: string): VoyagerEndpointId | null {
 
 export const linkedinActiveFetchFacet: ActiveFetchFacet = {
   id: "linkedin",
+
+  // Lê o csrf fresco do cookie JSESSIONID antes do replay (o harvest de headers não o vê no SW).
+  refreshAuth: refreshCsrfFromCookie,
 
   enumerate: (store) => enumerateTargets(store),
 

@@ -30,6 +30,11 @@ export type SyntheticCapture = CapturedPayloadMessage;
 export type ActiveFetchFacet = {
   id: SocialProvider;
 
+  // Opcional: renova credenciais voláteis ANTES do fan-out (ex.: LinkedIn lê o csrf do
+  // cookie JSESSIONID via chrome.cookies). O scheduler awaita isto se presente. É o único
+  // ponto onde o caminho ativo toca chrome.* — fica na faceta do provider, não no genérico.
+  refreshAuth?: () => Promise<void>;
+
   // Enumera os alvos a partir do store consolidado (LinkedIn: os activity_urn da busca).
   enumerate: (store: BackgroundStore) => ActiveFetchTarget[];
 
