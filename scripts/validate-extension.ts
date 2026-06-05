@@ -11,15 +11,15 @@ const requiredFiles = [
   "background.js",
   "content.js",
   "interceptor.js",
-  "popup.html",
-  "popup.css",
-  "popup.js",
+  "panel.html",
+  "panel.css",
+  "panel.js",
   "icons/icon16.png",
   "icons/icon48.png",
   "icons/icon128.png",
 ];
 
-const scriptFiles = ["background.js", "content.js", "interceptor.js", "popup.js"];
+const scriptFiles = ["background.js", "content.js", "interceptor.js", "panel.js"];
 
 function ok(message: string) {
   console.log(`ok - ${message}`);
@@ -108,7 +108,10 @@ async function validateManifest() {
     );
   }
 
-  if (manifest.action?.default_popup !== "popup.html") fail("default popup deve ser popup.html");
+  if (manifest.side_panel?.default_path !== "panel.html") {
+    fail("side_panel.default_path deve ser panel.html");
+  }
+  if (manifest.action?.default_popup) fail("não deve haver default_popup (a UI é o side panel)");
 
   for (const iconPath of Object.values(manifest.icons || {})) {
     await assertFileExists(String(iconPath));

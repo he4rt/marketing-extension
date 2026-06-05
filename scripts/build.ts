@@ -1,5 +1,6 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { $ } from "bun";
 import manifest from "../src/manifest";
 
 const extVersion = process.env.EXT_VERSION;
@@ -45,10 +46,12 @@ await writeFile(path.join(distDir, "manifest.json"), `${JSON.stringify(finalMani
 await buildEntry("src/background/index.ts", "background.js", "esm");
 await buildEntry("src/content/index.ts", "content.js", "iife");
 await buildEntry("src/interceptor/index.ts", "interceptor.js", "iife");
-await buildEntry("src/popup/index.ts", "popup.js", "iife");
+// O painel é Preact (JSX): Bun lê jsx/jsxImportSource do tsconfig e empacota o preact.
+await buildEntry("src/panel/index.tsx", "panel.js", "iife");
 
-await copyFile("src/popup/index.html", "popup.html");
-await copyFile("src/popup/styles.css", "popup.css");
+await copyFile("src/panel/index.html", "panel.html");
+// Tailwind v4 compila o CSS do painel (Bun.build não processa o pipeline do Tailwind).
+await $`bunx @tailwindcss/cli -i ${path.join(root, "src/panel/styles.css")} -o ${path.join(distDir, "panel.css")} --minify`.quiet();
 await copyFile("src/assets/icons/icon16.png", "icons/icon16.png");
 await copyFile("src/assets/icons/icon48.png", "icons/icon48.png");
 await copyFile("src/assets/icons/icon128.png", "icons/icon128.png");
