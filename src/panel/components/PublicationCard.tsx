@@ -1,9 +1,10 @@
-// Card de publicação X/Instagram a partir de SocialPublication. É um <button> (acessível
-// por teclado) que abre a publicação. JSX escapa o texto — sem necessidade de escapeHtml.
+// Card de publicação X/Instagram. Conteúdo não-clicável + ações explícitas no rodapé
+// (Detalhes abre o detalhe no painel; Abrir ↗ vai pra rede). JSX escapa o texto.
 
 import type { SocialPublication } from "../../shared/domain";
 import { fmt, formatDate, labelType } from "../lib/format";
 import { openDetail } from "../state/store";
+import { IconBtn } from "./IconBtn";
 
 // Cor do badge por tipo (paleta suave alinhada à rede). Estáticas para o Tailwind detectar.
 const TYPE_CLASS: Record<string, string> = {
@@ -19,18 +20,13 @@ const TYPE_CLASS: Record<string, string> = {
 };
 
 export function PublicationCard({ pub }: { pub: SocialPublication }) {
-  const open = () => openDetail(pub.provider, pub.publication_id);
   const author = pub.author.username ? `@${pub.author.username}` : "Publicação visível";
   const text =
     pub.text || (pub.is_placeholder ? "Dados básicos capturados pelo DOM" : "(sem legenda)");
   const badge = TYPE_CLASS[pub.type] ?? "bg-paper-2 text-ink-2";
 
   return (
-    <button
-      type="button"
-      onClick={open}
-      class="mt-2.5 block w-full rounded-xl border border-line bg-card p-3.5 text-left shadow-sm transition-transform hover:-translate-y-0.5 hover:border-line-2"
-    >
+    <article class="mt-2.5 rounded-xl border border-line bg-card p-3.5 shadow-sm">
       <div class="mb-2 flex items-center gap-1.5">
         <span class={`rounded px-1.5 py-px font-mono text-[9px] font-semibold uppercase ${badge}`}>
           {labelType(pub.type)}
@@ -60,6 +56,12 @@ export function PublicationCard({ pub }: { pub: SocialPublication }) {
           <b class="font-mono font-semibold text-ink">{fmt(pub.metrics.view_count)}</b> views
         </span>
       </div>
-    </button>
+      <div class="mt-2.5 flex gap-2 border-t border-line pt-2.5">
+        <IconBtn onClick={() => openDetail(pub.provider, pub.publication_id)}>Detalhes</IconBtn>
+        {pub.url ? (
+          <IconBtn onClick={() => chrome.tabs.create({ url: pub.url })}>Abrir ↗</IconBtn>
+        ) : null}
+      </div>
+    </article>
   );
 }

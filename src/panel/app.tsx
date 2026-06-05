@@ -6,6 +6,7 @@ import { sortPublications } from "../shared/sort";
 import { CollectionTarget } from "./components/CollectionTarget";
 import { ConfigPanel } from "./components/ConfigPanel";
 import { DetailView } from "./components/detail/DetailView";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Header } from "./components/Header";
 import { LinkedInCard } from "./components/LinkedInCard";
 import { PublicationCard } from "./components/PublicationCard";
@@ -117,7 +118,7 @@ export function App() {
       <CollectionTarget />
       <Tabs />
       <div class="mx-3.5 h-px bg-line" />
-      {selected.value ? <DetailView /> : <TabContent />}
+      <ErrorBoundary>{selected.value ? <DetailView /> : <TabContent />}</ErrorBoundary>
     </div>
   );
 }

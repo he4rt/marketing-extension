@@ -4,14 +4,22 @@
 
 import { signal } from "@preact/signals";
 import type {
-  ExportLinkedInPost,
+  LinkedInPostData,
   SocialComment,
   SocialEngagement,
   SocialProvider,
   SocialPublication,
 } from "../../shared/domain";
 import type { AllSummaryResponse, HandlesResponse } from "../../shared/messages";
+import type { EngagerCount } from "../features/linkedin-discovery/engagers";
 import { send } from "./bridge";
+
+// Shape REAL de um post no GET_PLATFORM_DATA do LinkedIn (≠ ExportLinkedInPost do export v3):
+// é o LinkedInPostData + um resumo {captured,total} por categoria de engajador. As LISTAS de
+// usuários NÃO vêm nesta resposta — só os contadores.
+export type LinkedInPanelPost = LinkedInPostData & {
+  engagers: { reactions: EngagerCount; reposts: EngagerCount; comments: EngagerCount };
+};
 
 export type TabId = SocialProvider | "all" | "config";
 export type HandlesMap = Partial<Record<SocialProvider, string>>;
@@ -27,7 +35,7 @@ export type ProviderData = {
 // Resposta de GET_PLATFORM_DATA para o LinkedIn (descoberta SDUI: lista de posts + sinais).
 export type LinkedInProviderData = {
   type: "linkedin";
-  content: ExportLinkedInPost[];
+  content: LinkedInPanelPost[];
   lastUpdated: string | null;
   unreadable?: number;
   calibrated?: boolean;
