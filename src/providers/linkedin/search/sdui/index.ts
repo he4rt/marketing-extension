@@ -10,6 +10,9 @@ export type SduiSearchResult = {
   publications: SocialPublication[];
   unreadable: number;
   breakdowns: Record<string, Record<string, number>>;
+  // Linha crua do nó (cabeçalho `feed-actor`) por publication_id. É a fonte do NAV do
+  // autor (member/org) e do ugcPost INLINE — threaded até o post-data.ts da derivação.
+  rawNodes: Record<string, string>;
 };
 
 // Orquestra a leitura do stream Flight da busca do LinkedIn:
@@ -21,6 +24,7 @@ export type SduiSearchResult = {
 export function parseLinkedInSearchSdui(raw: string): SduiSearchResult {
   const publications: SocialPublication[] = [];
   const breakdowns: Record<string, Record<string, number>> = {};
+  const rawNodes: Record<string, string> = {};
   let unreadable = 0;
 
   try {
@@ -39,14 +43,15 @@ export function parseLinkedInSearchSdui(raw: string): SduiSearchResult {
         seen.add(pub.publication_id);
         publications.push(pub);
         breakdowns[pub.publication_id] = reactionBreakdown(pub.publication_id, tables);
+        rawNodes[pub.publication_id] = node.rawObject;
       } catch {
         unreadable++;
       }
     }
   } catch {
     // Falha catastrófica do tokenizer → trata como nada legível, sem propagar.
-    return { publications: [], unreadable: 0, breakdowns: {} };
+    return { publications: [], unreadable: 0, breakdowns: {}, rawNodes: {} };
   }
 
-  return { publications, unreadable, breakdowns };
+  return { publications, unreadable, breakdowns, rawNodes };
 }
