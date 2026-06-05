@@ -5,9 +5,11 @@ import type { SocialProvider } from "../shared/domain";
 import { sortPublications } from "../shared/sort";
 import { CollectionTarget } from "./components/CollectionTarget";
 import { ConfigPanel } from "./components/ConfigPanel";
+import { DetailView } from "./components/detail/DetailView";
 import { Header } from "./components/Header";
 import { LinkedInCard } from "./components/LinkedInCard";
 import { PublicationCard } from "./components/PublicationCard";
+import { Spinner } from "./components/Spinner";
 import { SummaryCards } from "./components/SummaryCards";
 import { Tabs } from "./components/Tabs";
 import { CountInfo, Toolbar } from "./components/Toolbar";
@@ -17,8 +19,10 @@ import { plural } from "./lib/format";
 import {
   activeTab,
   type LinkedInProviderData,
+  loading,
   type ProviderData,
   providerData,
+  selected,
 } from "./state/store";
 
 const EMPTY_HINT: Record<string, string> = {
@@ -47,7 +51,11 @@ function PlatformTab({ provider }: { provider: SocialProvider }) {
         info={<CountInfo n={pubs.length} noun={plural(pubs.length, "publicação", "publicações")} />}
       />
       {pubs.length === 0 ? (
-        <EmptyState provider={provider} />
+        loading.value ? (
+          <Spinner />
+        ) : (
+          <EmptyState provider={provider} />
+        )
       ) : (
         <div class="flex-1 overflow-y-auto px-3.5 pb-4">
           {pubs.map((p) => (
@@ -78,7 +86,11 @@ function LinkedInTab() {
       />
       {posts.length > 0 && <DeepenControl calibrated={data?.calibrated === true} />}
       {posts.length === 0 ? (
-        <EmptyState provider="linkedin" />
+        loading.value ? (
+          <Spinner />
+        ) : (
+          <EmptyState provider="linkedin" />
+        )
       ) : (
         <div class="mt-2 flex-1 overflow-y-auto px-3.5 pb-4">
           {posts.map((p) => (
@@ -105,7 +117,7 @@ export function App() {
       <CollectionTarget />
       <Tabs />
       <div class="mx-3.5 h-px bg-line" />
-      <TabContent />
+      {selected.value ? <DetailView /> : <TabContent />}
     </div>
   );
 }

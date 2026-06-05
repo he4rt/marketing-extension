@@ -3,10 +3,10 @@
 
 import type { ExportLinkedInPost } from "../../shared/domain";
 import { fmt, formatDate } from "../lib/format";
+import { openDetail } from "../state/store";
 
 export function LinkedInCard({ post }: { post: ExportLinkedInPost }) {
-  const open = () =>
-    chrome.tabs.create({ url: `https://www.linkedin.com/feed/update/${post.activity_urn}/` });
+  const open = () => openDetail("linkedin", post.id);
 
   const author = post.author.name || post.author.vanity_name || "Visível";
   const date = post.created_at ? formatDate(post.created_at) : post.timestamp_text || "";

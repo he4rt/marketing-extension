@@ -45,6 +45,21 @@ export const providerData = signal<Partial<Record<SocialProvider, AnyProviderDat
 export const summary = signal<AllSummaryResponse | null>(null);
 export const detected = signal<DetectedTarget | null>(null);
 
+// Item aberto em detalhe (comentários/engajadores). null = visão de lista.
+export type Selected = { provider: SocialProvider; id: string } | null;
+export const selected = signal<Selected>(null);
+
+// Carregando a aba ativa — o spinner só aparece no primeiro load (loading && sem dados).
+export const loading = signal(false);
+
+export function openDetail(provider: SocialProvider, id: string): void {
+  selected.value = { provider, id };
+}
+
+export function closeDetail(): void {
+  selected.value = null;
+}
+
 // --- Refresh (cada um atualiza um signal; a UI reage) ---
 export async function refreshHandles(): Promise<void> {
   const res = await send<HandlesResponse | undefined>({ action: "GET_HANDLES" });
@@ -64,12 +79,18 @@ export async function refreshSummary(): Promise<void> {
 // Reatualiza só a aba ativa (chamado no STORE_UPDATED e ao trocar de aba).
 export async function refreshActive(): Promise<void> {
   const tab = activeTab.value;
-  if (tab === "all") return refreshSummary();
-  if (tab === "config") return refreshHandles();
-  return refreshPlatform(tab);
+  loading.value = true;
+  try {
+    if (tab === "all") await refreshSummary();
+    else if (tab === "config") await refreshHandles();
+    else await refreshPlatform(tab);
+  } finally {
+    loading.value = false;
+  }
 }
 
 export function setActiveTab(tab: TabId): void {
+  selected.value = null; // trocar de aba fecha qualquer detalhe aberto
   activeTab.value = tab;
   void refreshActive();
 }

@@ -3,6 +3,7 @@
 
 import type { SocialPublication } from "../../shared/domain";
 import { fmt, formatDate, labelType } from "../lib/format";
+import { openDetail } from "../state/store";
 
 // Cor do badge por tipo (paleta suave alinhada à rede). Estáticas para o Tailwind detectar.
 const TYPE_CLASS: Record<string, string> = {
@@ -18,9 +19,7 @@ const TYPE_CLASS: Record<string, string> = {
 };
 
 export function PublicationCard({ pub }: { pub: SocialPublication }) {
-  const open = () => {
-    if (pub.url) chrome.tabs.create({ url: pub.url });
-  };
+  const open = () => openDetail(pub.provider, pub.publication_id);
   const author = pub.author.username ? `@${pub.author.username}` : "Publicação visível";
   const text =
     pub.text || (pub.is_placeholder ? "Dados básicos capturados pelo DOM" : "(sem legenda)");
