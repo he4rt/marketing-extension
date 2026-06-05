@@ -769,3 +769,127 @@ exports[`golden-master export v3 LinkedIn 1`] = `
   },
 }
 `;
+
+exports[`golden-master export v3 LinkedIn (search) 1`] = `
+{
+  "meta": {
+    "exported_at": "<ts>",
+    "handles": {
+      "_": "",
+      "linkedin": "",
+    },
+    "profiles": {
+      "instagram": {
+        "username": "",
+      },
+      "linkedin": {
+        "username": "",
+      },
+      "x": {
+        "username": "",
+      },
+    },
+  },
+  "per_platform": {
+    "instagram": {
+      "content": [],
+    },
+    "linkedin": {
+      "content": [
+        {
+          "activity_urn": "urn:li:activity:7466899297645649920",
+          "author": {
+            "avatar_url": "",
+            "headline": "",
+            "name": "Umar Waqas",
+            "urn": "umar-waqas",
+            "vanity_name": "umar-waqas",
+          },
+          "created_at": "",
+          "engagement_metrics": {
+            "audience_interactions": 0,
+            "real_comments": 0,
+            "replies": 0,
+            "unique_commenters_count": 0,
+            "unique_engagers_count": 0,
+            "unique_reacters_count": 0,
+          },
+          "engagers": {
+            "comments": [],
+            "reactions": [],
+            "reposts": [],
+          },
+          "hashtags": [],
+          "id": "urn:li:activity:7466899297645649920",
+          "media": [],
+          "metrics": {
+            "comment_count": 1,
+            "like_count": 33,
+            "reaction_breakdown": {
+              "EMPATHY": 2,
+              "LIKE": 31,
+            },
+            "share_count": 8,
+            "total_reactions": 33,
+          },
+          "provenance": {
+            "mode": "search",
+            "value": "Laravel Day SP",
+          },
+          "share_urn": "",
+          "source": "search_sdui",
+          "text": "12 Laravel functions that took me from Junior → Senior Developer 🚀 Save this post. Your future self will thank you. 1️⃣ route() Stop hardcoding URLs forever. route('users.edit', $user) Cleaner. Safer. Maintainable. 2️⃣ auth() No imports. No extra setup. auth()->user() auth()->id() auth()->check() Simple and powerful. 3️⃣ request() Validation + input handling in one place. request()->validate([...]) Fastest way to secure forms. 4️⃣ collect() The moment arrays became boring. collect($users)->where('active', true)->pluck('email') Laravel Collections are pure magic. 5️⃣ optional() The 3 AM production bug saver. optional($user->post)->title No more: “Trying to get property of non-object” 6️⃣ tap() Modify something AND return it. return tap($user)->update($data); Underrated but incredibly clean. 7️⃣ when() / unless() Write readable conditional queries. $q->where('name', $search) ); Goodbye messy if-statements. 8️⃣ abort_if() / abort_unless() abort_unless($user->isAdmin(), 403); Reads like plain English. 9️⃣ now() / today() Laravel already wrapped Carbon for you. now() today() Small helper. Huge convenience. 🔟 blank() / filled() filled($name) blank($data) Better than empty(). 1️⃣1️⃣ rescue() Elegant error handling. Less boilerplate. More productivity. 1️⃣2️⃣ dd() / dump() The universal debugging language 😂 And if you know spatie/ray… You already know the next level. 📌 The rule I live by: If you wrote it twice → make it reusable. If Laravel already made it reusable → use Laravel’s version. Laravel is not just a framework. It’s developer experience done right. 💯 Which Laravel function do you use the most? And which hidden gem should every developer know? 👇 #Laravel #PHP #WebDevelopment #Programming #Coding #SoftwareEngineer #BackendDeveloper #CleanCode #DevTips #FullStackDeveloper",
+          "timestamp_text": "",
+          "type": "original",
+        },
+      ],
+    },
+    "x": {
+      "content": [],
+      "engagers": {
+        "likes_by_tweet": {},
+        "replies": [],
+      },
+    },
+  },
+  "schema_version": 3,
+  "unified": {
+    "summary": {
+      "all": {
+        "total_comments": 1,
+        "total_content": 1,
+        "total_likes": 33,
+        "unique_engagers": 0,
+      },
+      "by_platform": {
+        "instagram": {
+          "total_comments": 0,
+          "total_content": 0,
+          "total_likes": 0,
+          "total_views": 0,
+        },
+        "linkedin": {
+          "total_audience_interactions": 0,
+          "total_comment_items": 0,
+          "total_comment_reaction_users": 0,
+          "total_comments": 1,
+          "total_content": 1,
+          "total_likes": 33,
+          "total_reaction_users": 0,
+          "total_repost_users": 0,
+          "total_shares": 8,
+        },
+        "x": {
+          "total_bookmarks": 0,
+          "total_content": 0,
+          "total_likes": 0,
+          "total_quotes": 0,
+          "total_replies": 0,
+          "total_retweets": 0,
+          "total_views": 0,
+        },
+      },
+    },
+  },
+}
+`;

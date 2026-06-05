@@ -119,17 +119,22 @@ function notifyStoreUpdated() {
 chrome.runtime.onMessage.addListener((request: RuntimeMessage, _sender, sendResponse) => {
   hydration
     .then(() => {
-      const response = handleRuntimeMessage(store, request, {
-        log: console.log,
-        persistHandle: (handle) => chrome.storage.local.set({ trackedHandle: handle }),
-      });
+      // handleRuntimeMessage pode devolver um valor síncrono OU uma Promise (ex.:
+      // RUN_ACTIVE_FETCH dispara o scheduler assíncrono). Normaliza com Promise.resolve
+      // para responder ao popup só com o status já resolvido.
+      return Promise.resolve(
+        handleRuntimeMessage(store, request, {
+          log: console.log,
+          persistHandle: (handle) => chrome.storage.local.set({ trackedHandle: handle }),
+        }),
+      ).then((response) => {
+        const sessionPersist = shouldPersistSession(request) ? persistSession() : Promise.resolve();
+        const localPersist = shouldPersistLocal(request) ? persistLocal() : Promise.resolve();
 
-      const sessionPersist = shouldPersistSession(request) ? persistSession() : Promise.resolve();
-      const localPersist = shouldPersistLocal(request) ? persistLocal() : Promise.resolve();
-
-      Promise.all([sessionPersist, localPersist]).then(() => {
-        if (shouldPersistSession(request)) notifyStoreUpdated();
-        sendResponse(response);
+        return Promise.all([sessionPersist, localPersist]).then(() => {
+          if (shouldPersistSession(request)) notifyStoreUpdated();
+          sendResponse(response);
+        });
       });
     })
     .catch((error) => {

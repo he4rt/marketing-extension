@@ -9,6 +9,8 @@ import type {
   SocialPublication,
 } from "../shared/domain";
 import { sortPublications } from "../shared/sort";
+import { setupActiveFetchControl } from "./active-fetch-control";
+import { renderLinkedInDiscovery } from "./linkedin-discovery";
 
 type ProviderData = {
   publications: Record<string, SocialPublication>;
@@ -21,6 +23,10 @@ type LinkedInProviderData = {
   type: "linkedin";
   content: ExportLinkedInPost[];
   lastUpdated: string | null;
+  // Sinais de descoberta da busca SDUI (#14). Opcionais: `unreadable`/`calibrated` só
+  // chegam quando #18 ligar os campos no controller; ausentes = estado neutro no popup.
+  unreadable?: number;
+  calibrated?: boolean;
 };
 
 type AllSummary = {
@@ -216,6 +222,9 @@ function setupButtons() {
   document.getElementById("allExportRawBtn")?.addEventListener("click", () => exportRaw(null));
   document.getElementById("saveHandlesBtn")?.addEventListener("click", saveHandles);
 
+  // #16: liga o botão "Aprofundar engajamento (L3)" ao fan-out Active Fetch + progresso.
+  setupActiveFetchControl();
+
   ["handleX", "handleIg", "handleLi"].forEach((id) => {
     document.getElementById(id)?.addEventListener("keydown", (e) => {
       if (e.key === "Enter") saveHandles();
@@ -328,8 +337,12 @@ function renderLinkedIn(data: LinkedInProviderData) {
   const prefix = "li";
   const posts = data.content || [];
 
-  getElement(`${prefix}PublicationCount`).textContent =
-    `${posts.length} ${plural(posts.length, "publicação", "publicações")}`;
+  // #14: cabeçalho de descoberta (posts descobertos + ponto de extensão p/ ilegíveis e L3).
+  renderLinkedInDiscovery({
+    discovered: posts.length,
+    unreadable: data.unreadable,
+    calibrated: data.calibrated,
+  });
   getExportBtn(prefix).disabled = posts.length === 0;
   getExportRawBtn(prefix).disabled = posts.length === 0;
   getClearBtn(prefix).disabled = posts.length === 0;

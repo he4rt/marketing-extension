@@ -1,15 +1,23 @@
 import { PROVIDER_METAS } from "./providers/meta";
 
-// host_permissions e os matches dos content scripts saem do registry de providers.
+// Os matches dos content scripts saem do registry de providers.
 const matches = PROVIDER_METAS.flatMap((meta) => meta.matches);
+
+// host_permissions = união (deduplicada) dos matches com os hostPermissions extras dos
+// providers (split do ADR-0003: alguns providers chamam endpoints via Active Fetch e
+// precisam da permissão de host além de onde injetam content script).
+const hostPermissions = [
+  ...new Set([...matches, ...PROVIDER_METAS.flatMap((meta) => meta.hostPermissions ?? [])]),
+];
 
 const manifest = {
   manifest_version: 3,
   name: "He4rt Analytics",
   version: "1.0.0",
   description: "Captura engajamento social da comunidade He4rt Developers",
-  permissions: ["storage", "tabs", "unlimitedStorage"],
-  host_permissions: matches,
+  // "cookies": o SW lê o JSESSIONID (csrf) de linkedin.com para o replay credenciado do L3.
+  permissions: ["storage", "tabs", "unlimitedStorage", "cookies"],
+  host_permissions: hostPermissions,
   background: {
     service_worker: "background.js",
     type: "module",

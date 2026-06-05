@@ -22,11 +22,22 @@ import type { RuntimeMessage } from "../shared/messages";
 
 export type NetworkMatch = {
   endpoint: string;
+  // Como o interceptor lê o corpo da resposta. Default "json" (clone.json()).
+  // "text" (clone.text()) para respostas não-JSON, ex.: o stream SDUI/Flight da
+  // busca do LinkedIn. Hint genérico: nenhum motor conhece redes individuais.
+  responseFormat?: "json" | "text";
+  // Subconjunto de headers da REQUISIÇÃO que o provider quer encaminhar ao SW (harvest L3).
+  // O interceptor apenas repassa — não conhece quais headers cada rede usa. Ex. (LinkedIn):
+  // { "x-li-track": "..." } para o clientVersion. Por design, NUNCA inclua o csrf aqui.
+  signature?: Record<string, string>;
 };
 
 export type NetworkInterceptStrategy = {
   kind: "networkIntercept";
-  match: (url: string, init?: { body?: BodyInit | null } | null) => NetworkMatch | null;
+  match: (
+    url: string,
+    init?: { body?: BodyInit | null; headers?: Record<string, string> } | null,
+  ) => NetworkMatch | null;
   gate?: (payload: unknown, endpoint: string | null) => boolean;
   rename?: (payload: unknown, endpoint: string | null) => string;
 };

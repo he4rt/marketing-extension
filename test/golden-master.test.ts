@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { createStore, handleRuntimeMessage } from "../src/background/controller";
 import type { RuntimeMessage } from "../src/shared/messages";
 import {
@@ -27,6 +29,14 @@ import {
 // estrutural ou de valor no v3 falha em vermelho durante a reestruturação dos providers.
 
 const TS = "2026-05-20T12:00:00.000Z";
+
+// Stream React-Flight da busca SDUI (mini-fixture fiel: 2 posts bem-formados, 0 ilegíveis).
+// Captura `searchResultsContent` chega como STRING — espelha o que o interceptor posta com
+// responseFormat:"text". Reusa a mesma fixture do unit do parser para manter um só oráculo.
+const linkedinSearchSduiPayload = readFileSync(
+  join(import.meta.dir, "fixtures", "linkedin-search-sdui.min.txt"),
+  "utf8",
+);
 
 function harness() {
   const store = createStore();
@@ -159,6 +169,24 @@ describe("golden-master export v3", () => {
       payload: linkedinRepostsPayload,
       pageUrl: "https://www.linkedin.com/company/he4rt/",
       url: linkedinRepostsUrl,
+    });
+
+    expect(exportOf(send)).toMatchSnapshot();
+  });
+
+  // Cenário NOVO (#14): descoberta SDUI da busca. Monta um store só com a captura
+  // `searchResultsContent` (payload STRING Flight) e snapshota o export. Cada item de
+  // per_platform.linkedin.content[] deve carregar provenance {mode:"search", value}.
+  // Snapshot NOVO — gerado na 1a execução (toMatchSnapshot), sem -u; os 3 v3 atuais
+  // permanecem byte-idênticos (search é aditivo e profile-puro não grava provenance search).
+  test("LinkedIn (search)", () => {
+    const { send } = harness();
+    send({ action: "SET_HANDLE", handle: "", provider: "linkedin" });
+    capture(send, {
+      provider: "linkedin",
+      endpoint: "searchResultsContent",
+      payload: linkedinSearchSduiPayload,
+      pageUrl: "https://www.linkedin.com/search/results/content/?keywords=Laravel+Day+SP",
     });
 
     expect(exportOf(send)).toMatchSnapshot();

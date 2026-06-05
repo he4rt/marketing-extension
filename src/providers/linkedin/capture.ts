@@ -1,4 +1,5 @@
 import type { EmbeddedCodeScanStrategy, NetworkInterceptStrategy } from "../../capture/strategies";
+import { signatureFromHeaders } from "./signature";
 
 // Estratégias de captura do LinkedIn. Lógica MOVIDA, sem reescrita:
 //  - networkIntercept: extractLinkedInEndpointName do antigo src/interceptor/index.ts
@@ -7,6 +8,29 @@ import type { EmbeddedCodeScanStrategy, NetworkInterceptStrategy } from "../../c
 //    (lê <code id="bpr-guid-*"> com payload JSON escapado em HTML).
 
 const LINKEDIN_VOYAGER_PATH = "/voyager/api/graphql";
+
+// Estágio 1 (descoberta): SRP de busca. A resposta é um stream React-Flight
+// (octet-stream), NÃO JSON — por isso o match pede responseFormat:"text" para o
+// interceptor ler clone.text() e o parser SDUI receber a string crua. Cobre a aba de
+// conteúdo (`/content/`) e a `/all/` — ambas trazem cabeçalhos `feed-actor`.
+const LINKEDIN_SEARCH_PATH = "/flagship-web/search/results/";
+
+// Streams SDUI PREGUIÇOSOS do scroll/barra-social: `pagination` (próximas páginas) e
+// `component` (re-render de componentes). Carregam os MESMOS cabeçalhos de post + os
+// contadores de reação/comentário/repost que NÃO vêm no render inicial. São usados
+// também pelo FEED — por isso só capturamos quando a página atual é uma SRP de busca.
+const LINKEDIN_RSC_SEARCH_PATHS = [
+  "/rsc-action/actions/pagination",
+  "/rsc-action/actions/component",
+];
+
+function onLinkedInSearchPage(): boolean {
+  try {
+    return window.location.pathname.includes("/search/results/");
+  } catch {
+    return false;
+  }
+}
 
 const LINKEDIN_ENDPOINT_MAP: Record<string, string> = {
   voyagerFeedDashOrganizationalPageUpdates: "feedDashOrganizationalPageUpdates",
@@ -31,9 +55,25 @@ function extractLinkedInEndpointName(url: string) {
 
 export const linkedinNetworkIntercept: NetworkInterceptStrategy = {
   kind: "networkIntercept",
-  match(url) {
+  match(url, init) {
+    // Assinatura L3: encaminha x-li-track (→ clientVersion) ao SW, onde a calibração vive.
+    // O csrf NÃO entra aqui (o SW o lê do cookie JSESSIONID). O harvest acontece no SW, não
+    // no MAIN — este match roda no interceptor (contexto separado do service worker).
+    const signature = signatureFromHeaders(init?.headers);
+    // Estágio 1 — descoberta SDUI: o SRP de busca devolve um stream Flight (texto).
+    if (url.includes(LINKEDIN_SEARCH_PATH)) {
+      return { endpoint: "searchResultsContent", responseFormat: "text", signature };
+    }
+    // Métricas preguiçosas: pagination/component da busca trazem posts + contadores.
+    // Só na SRP (a mesma rota serve o feed) — o merge por URN acontece no processCapture.
+    if (onLinkedInSearchPage() && LINKEDIN_RSC_SEARCH_PATHS.some((p) => url.includes(p))) {
+      return { endpoint: "searchResultsContent", responseFormat: "text", signature };
+    }
     const endpoint = extractLinkedInEndpointName(url);
-    return endpoint ? { endpoint } : null;
+    if (!endpoint) return null;
+    // Tráfego Voyager (ex.: post aberto): a URL traz o queryId; o x-li-track traz o
+    // clientVersion. Ambos seguem ao SW (queryId via url da mensagem, clientVersion na signature).
+    return { endpoint, signature };
   },
 };
 

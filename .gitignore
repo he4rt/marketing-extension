@@ -4,3 +4,7 @@ dist/
 
 .DS_Store
 
+
+# Python (scripts de análise)
+__pycache__/
+*.pyc

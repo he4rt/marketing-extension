@@ -9,7 +9,7 @@ import type {
 import { type AnyRecord, emptyMetrics, publicationKey } from "../shared/utils";
 
 export function extractTweetData(result: AnyRecord | null | undefined): TweetData | null {
-  if (!result || result.__typename !== "Tweet") return null;
+  if (result?.__typename !== "Tweet") return null;
   const legacy = result.legacy || {};
   const authorResult = result.core?.user_results?.result;
   const authorCore = authorResult?.core || {};
@@ -236,7 +236,7 @@ export function processFavoritersPayload(payload: unknown): Favoriter[] {
       const content = entry?.content;
       if (content?.__typename !== "TimelineTimelineItem") continue;
       const result = content?.itemContent?.user_results?.result;
-      if (!result || result?.__typename !== "User") continue;
+      if (result?.__typename !== "User") continue;
       const core = result?.core || {};
       const legacy = result?.legacy || {};
       const rel = result?.relationship_perspectives || {};

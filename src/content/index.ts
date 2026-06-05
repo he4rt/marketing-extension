@@ -5,6 +5,7 @@ import type {
   EmbeddedCodeScanStrategy,
 } from "../capture/strategies";
 import { providerForHost } from "../providers/meta";
+import { approxBytes, logHe4rt } from "../shared/log";
 import type { PageCapturedMessage, PageGraphqlMessage } from "../shared/messages";
 
 // Motor de captura no DOM (ISOLATED world). Antes este arquivo tinha blocos hardcoded por
@@ -133,7 +134,10 @@ function handlePageMessage(event: MessageEvent<PageCapturedMessage | PageGraphql
   if (event.source !== window || !extensionContextActive) return;
 
   if (event.data.type === "SOCIAL_CAPTURED") {
-    console.log(`[He4rt Analytics] encaminhando ${event.data.provider}:${event.data.endpoint}`);
+    logHe4rt(
+      "bridge",
+      `encaminhando ${event.data.provider}:${event.data.endpoint} · ${approxBytes(event.data.payload)}B`,
+    );
     sendRuntimeMessage({
       action: "CAPTURED_PAYLOAD",
       provider: event.data.provider,
@@ -142,6 +146,7 @@ function handlePageMessage(event: MessageEvent<PageCapturedMessage | PageGraphql
       payload: event.data.payload,
       timestamp: new Date().toISOString(),
       pageUrl: window.location.href,
+      signature: event.data.signature, // assinatura L3 (headers) → harvest no SW.
     });
   }
 
