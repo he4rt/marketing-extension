@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { progressLabel } from "../../src/popup/active-fetch-control";
+import { progressLabel } from "../../src/panel/features/active-fetch/progress";
 import type { ActiveFetchStatusResponse } from "../../src/shared/messages";
 
-// progressLabel é a função pura que traduz o status do fan-out em texto pro popup. O modo
-// dry-run (Step 4) precisa deixar claro que NADA foi enviado.
+// progressLabel traduz o status do fan-out em texto. O modo dry-run precisa deixar claro
+// que NADA foi enviado (gate de ToS). Migrado de test/popup/active-fetch-control.test.ts.
 
 function status(over: Partial<ActiveFetchStatusResponse>): ActiveFetchStatusResponse {
   return {

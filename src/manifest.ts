@@ -16,7 +16,8 @@ const manifest = {
   version: "1.0.0",
   description: "Captura engajamento social da comunidade He4rt Developers",
   // "cookies": o SW lê o JSESSIONID (csrf) de linkedin.com para o replay credenciado do L3.
-  permissions: ["storage", "tabs", "unlimitedStorage", "cookies"],
+  // "sidePanel": a UI vive num side panel (substitui o popup) — clique no ícone abre o painel.
+  permissions: ["storage", "tabs", "unlimitedStorage", "cookies", "sidePanel"],
   host_permissions: hostPermissions,
   background: {
     service_worker: "background.js",
@@ -36,14 +37,17 @@ const manifest = {
       world: "ISOLATED",
     },
   ],
+  // Sem default_popup: o clique no ícone abre o side panel (ver setPanelBehavior no SW).
   action: {
-    default_popup: "popup.html",
     default_title: "He4rt Analytics",
     default_icon: {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
       "128": "icons/icon128.png",
     },
+  },
+  side_panel: {
+    default_path: "panel.html",
   },
   icons: {
     "16": "icons/icon16.png",

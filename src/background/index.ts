@@ -143,3 +143,7 @@ chrome.runtime.onMessage.addListener((request: RuntimeMessage, _sender, sendResp
     });
   return true;
 });
+
+// Clique no ícone da extensão abre o side panel (substitui o antigo default_popup).
+// `?.` degrada sem exceção em Chrome < 114, onde chrome.sidePanel não existe.
+chrome.sidePanel?.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
