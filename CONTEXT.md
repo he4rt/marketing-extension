@@ -51,6 +51,14 @@ A ligação de um Engagement/Comment à Publication (ou Tracked Account) que ele
 **Provenance**:
 O carimbo em cada item normalizado dizendo de qual Scope (`mode` + `value`) ele veio; consumido pelo scoring do He4rt Hub.
 
+**Active Fetch**:
+O **aprofundamento on-demand** de uma Publication já descoberta: o background **origina** requisições credenciadas (replay) para colher os Engagements/contadores que a captura **passiva** não trouxe (ex.: a busca descobre o post mas as reações vêm em streams preguiçosos). É **opt-in**, dosado (dry-run por padrão, volume limitado) e sujeito a ToS — distinto da captura passiva, que só observa o que a página já carrega.
+_Avoid_: scraping, crawl, automação de cliques
+
+**Publication URN / Thread**:
+No LinkedIn, uma Publication tem **mais de uma identidade**: a `activity` (o *wrapper* que a busca/feed descobre) e o **thread** (`ugcPost`/`share`, a peça por baixo). Os **Engagements** são endereçados pelo **thread**, não pela activity — então descobrir a Publication (activity) **não basta** para colher engajamento; é preciso **resolver** `activity → thread`.
+_Avoid_: id do post, postId (são ambíguos entre as duas identidades)
+
 ## Relationships
 
 - Um **Provider** observa uma ou mais **Tracked Accounts**
@@ -62,6 +70,8 @@ O carimbo em cada item normalizado dizendo de qual Scope (`mode` + `value`) ele 
 - Um **Scope** `profile` está ancorado numa **Tracked Account** (Handle == autor); um **Scope** `search`/`campaign` **não tem Tracked Account** — é ancorado numa query/evento e o sinal vira o conjunto de **Actors** que publicaram sobre o tema
 - Um **Scope** seleciona **Publications**; **Comments**/**Engagements** entram por **Binding** com uma Publication selecionada ou com a **Tracked Account**
 - Todo item normalizado carrega **Provenance** (qual **Collection Target** o trouxe)
+- Uma **Publication** descoberta por **Scope** `search` pode ser aprofundada por **Active Fetch** para colher seus **Engagements** — que a descoberta sozinha não traz
+- No LinkedIn, o **Binding** de Engagements a uma Publication usa o **thread** (`ugcPost`), não a `activity` — resolver `activity → thread` é pré-requisito do Active Fetch; o Engagement aprofundado entra pelo **mesmo Binding** do passivo (reusa a consolidação)
 
 ## Example dialogue
 
@@ -76,3 +86,4 @@ O carimbo em cada item normalizado dizendo de qual Scope (`mode` + `value`) ele 
 - **Publication-centric (código) vs Engagement-centric (produto)** — o código atual trata `SocialPublication` como cidadão de primeira classe e deriva engajamentos; o produto (README + ADR-0001) quer o inverso. **Resolvido (arquitetura):** _Scope seleciona Publications; Engagements seguem por Binding e são o sinal exportado pro Hub._ O store guarda os dois, mas o produto lê pelo Engagement.
 - **Handle vs Profile** — o código conflata em `trackedHandle` (string) e `trackedProfiles` (metadados). Resolvido aqui: **Handle** é a identidade-string usada pra escopar; **Profile** são os metadados capturados.
 - **"reply"** — usado pra dois conceitos: um subtipo de **Publication** (tweet de resposta) e um **Comment**. Manter os dois sentidos explícitos.
+- **activity vs thread (ugcPost) no LinkedIn** — a busca/feed entrega a `activity` URN, mas os **Engagements** são endereçados pelo **thread** (`ugcPost`/`share`). Pedir reactions/comments/reposts pela `activity` retorna **vazio** (HTTP 200, 0 itens) — não erro, o que engana. **Resolvido (entendimento):** _o **Active Fetch** precisa de um passo de **resolve** `activity→thread` antes do fan-out; a `activity` identifica a Publication, o `thread` endereça os Engagements._ Detalhes e plano em [`docs/specs/2026-06-05-l3-replay-findings.md`](docs/specs/2026-06-05-l3-replay-findings.md).
