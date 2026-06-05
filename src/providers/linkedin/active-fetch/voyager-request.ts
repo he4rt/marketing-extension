@@ -29,7 +29,8 @@ export function buildVoyagerRequest(
   if (!calib.csrfToken) return null; // sem JSESSIONID não há replay autenticável.
 
   const variables = descriptor.buildVariables(target.activityUrn);
-  const url = `${VOYAGER_GRAPHQL}?queryId=${queryId}&variables=${variables}`;
+  // includeWebMetadata=true espelha o tráfego real da página (sem ele, alguns endpoints 400).
+  const url = `${VOYAGER_GRAPHQL}?includeWebMetadata=true&queryId=${queryId}&variables=${variables}`;
 
   return new Request(url, {
     method: "GET",

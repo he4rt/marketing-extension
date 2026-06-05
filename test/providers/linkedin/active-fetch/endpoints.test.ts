@@ -31,23 +31,25 @@ describe("endpoints (descritores Voyager L3)", () => {
     expect(Object.isFrozen(VOYAGER_ENDPOINTS)).toBe(true);
   });
 
-  // O parser de reactions casa /urn:li:activity:(\d+)/ no variables; o de reposts casa
-  // targetUrn:<urn>. Os builders precisam produzir variables com esses formatos.
-  test("buildVariables de reactions injeta a URN da atividade", () => {
-    const desc = endpointDescriptor("socialDashReactions");
-    const vars = desc?.buildVariables("urn:li:activity:7465277392866037760");
-    expect(vars).toContain("urn:li:activity:7465277392866037760");
+  // Shapes validados ao vivo (HTTP 200): reactions usa threadUrn, comments usa socialDetailUrn
+  // (+ sortOrder), ambos com a URN da atividade PERCENT-ENCODADA (colons crus → 400). reposts
+  // usa targetUrn (shape ainda não validado ao vivo). O parser decoda via searchParams.get.
+  const ENC = encodeURIComponent("urn:li:activity:111"); // urn%3Ali%3Aactivity%3A111
+
+  test("reactions: threadUrn com a URN encodada", () => {
+    const vars = endpointDescriptor("socialDashReactions")?.buildVariables("urn:li:activity:111");
+    expect(vars).toBe(`(count:10,start:0,threadUrn:${ENC})`);
+    expect(vars).not.toContain("urn:li:activity:111"); // crua daria 400
   });
 
-  test("buildVariables de comments injeta a URN da atividade", () => {
-    const desc = endpointDescriptor("socialDashComments");
-    const vars = desc?.buildVariables("urn:li:activity:111");
-    expect(vars).toContain("urn:li:activity:111");
+  test("comments: socialDetailUrn encodado + sortOrder (não a forma fsd_socialDetail tupla)", () => {
+    const vars = endpointDescriptor("socialDashComments")?.buildVariables("urn:li:activity:111");
+    expect(vars).toBe(`(count:10,start:0,socialDetailUrn:${ENC},sortOrder:RELEVANCE)`);
+    expect(vars).not.toContain("fsd_socialDetail");
   });
 
-  test("buildVariables de reposts injeta a URN da atividade como targetUrn", () => {
-    const desc = endpointDescriptor("feedDashReshareFeed");
-    const vars = desc?.buildVariables("urn:li:activity:111");
-    expect(vars).toContain("targetUrn:urn:li:activity:111");
+  test("reposts: targetUrn com a URN encodada", () => {
+    const vars = endpointDescriptor("feedDashReshareFeed")?.buildVariables("urn:li:activity:111");
+    expect(vars).toBe(`(count:10,start:0,targetUrn:${ENC})`);
   });
 });

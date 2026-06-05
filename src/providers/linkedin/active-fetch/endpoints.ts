@@ -5,10 +5,14 @@
 //  - buildVariables(activityUrn): o trecho `variables=(...)` da URL Voyager, no formato que
 //    o parser correspondente (linkedinParseReactions/Comments/Reposts) sabe ler de volta.
 //
-// O contrato com o parser é a forma do `variables`:
-//  - reactions: o parser casa /urn:li:activity:(\d+)/ → injetamos `urn:<activityUrn>`;
-//  - comments:  o parser casa /urn:li:activity:(\d+)/ → injetamos `socialDetailUrn:...<activityUrn>`;
-//  - reposts:   o parser casa `targetUrn:<urn>`        → injetamos `targetUrn:<activityUrn>`.
+// Shapes VALIDADOS ao vivo (fetch credenciado contra o Voyager, HTTP 200) — o activity URN
+// funciona direto, SEM resolver para ugcPost; o 400 anterior era o nome do parâmetro errado.
+//  - reactions: `threadUrn:<activityUrn>`         (era `urn:` → 400);
+//  - comments:  `socialDetailUrn:<activityUrn>,sortOrder:RELEVANCE` (a forma fsd_socialDetail tupla dá 400);
+//  - reposts:   `targetUrn:<activityUrn>`         (shape ainda NÃO validado ao vivo — ver TODO).
+// A URN é SEMPRE percent-encodada (colons crus → 400). O parser lê via searchParams.get, que
+// decoda de volta — então /urn:li:activity:(\d+)/ continua casando. `includeWebMetadata=true`
+// entra na URL (voyager-request.ts), espelhando o tráfego real da página.
 
 import type { CalibrationCache } from "./calibration";
 
@@ -35,17 +39,19 @@ export const VOYAGER_ENDPOINTS: Readonly<Record<VoyagerEndpointId, VoyagerEndpoi
     socialDashReactions: {
       id: "socialDashReactions",
       queryIdField: "queryId_reactions",
-      buildVariables: (urn) => `(${PAGINACAO},urn:${urn})`,
+      buildVariables: (urn) => `(${PAGINACAO},threadUrn:${encodeURIComponent(urn)})`,
     },
     socialDashComments: {
       id: "socialDashComments",
       queryIdField: "queryId_comments",
-      buildVariables: (urn) => `(${PAGINACAO},socialDetailUrn:urn:li:fsd_socialDetail:${urn})`,
+      buildVariables: (urn) =>
+        `(${PAGINACAO},socialDetailUrn:${encodeURIComponent(urn)},sortOrder:RELEVANCE)`,
     },
     feedDashReshareFeed: {
       id: "feedDashReshareFeed",
       queryIdField: "queryId_reposts",
-      buildVariables: (urn) => `(${PAGINACAO},targetUrn:${urn})`,
+      // TODO: shape não validado ao vivo (faltou colher o queryId_reposts + tráfego de reshare).
+      buildVariables: (urn) => `(${PAGINACAO},targetUrn:${encodeURIComponent(urn)})`,
     },
   });
 
