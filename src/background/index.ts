@@ -23,23 +23,26 @@ if (chrome.alarms) {
     if (alarm.name !== "devto-afk") return;
     const strategy = getActiveFetchStrategy("devto");
     if (!strategy) return;
+    await hydration;
     const result = await chrome.storage.local.get("devtoApiKey");
     const apiKey = (result.devtoApiKey as string | undefined) ?? null;
     await runActiveFetch({
       strategy,
       apiKey,
       mode: "afk",
-      onCapture: (endpoint, payload) => {
+      onCapture: (endpoint, payload, url) => {
         handleRuntimeMessage(store, {
           action: "CAPTURED_PAYLOAD",
           provider: "devto",
           endpoint,
           payload,
+          url,
           pageUrl: "https://dev.to",
           timestamp: new Date().toISOString(),
         });
       },
     });
+    persistSession();
   });
 }
 
@@ -74,6 +77,7 @@ async function hydrate() {
     if (s.x) Object.assign(store.platforms.x, s.x);
     if (s.instagram) Object.assign(store.platforms.instagram, s.instagram);
     if (s.linkedin) Object.assign(store.platforms.linkedin, s.linkedin);
+    if (s.devto) Object.assign(store.platforms.devto, s.devto);
   }
 
   store.lastUpdated = new Date().toISOString();
@@ -92,6 +96,7 @@ function persistSession(): Promise<void> {
     x: store.platforms.x,
     instagram: store.platforms.instagram,
     linkedin: store.platforms.linkedin,
+    devto: store.platforms.devto,
   };
   persistQueue = persistQueue
     .then(() => chrome.storage.session.set({ [SESSION_KEY]: snapshot }))
@@ -166,31 +171,34 @@ chrome.runtime.onMessage.addListener((request: RuntimeMessage, _sender, sendResp
 
   if (request.action === "RUN_ACTIVE_FETCH" && request.provider === "devto") {
     const provider = request.provider;
-    chrome.storage.local.get("devtoApiKey").then(async (result) => {
-      const apiKey = (result.devtoApiKey as string | undefined) ?? null;
-      const strategy = getActiveFetchStrategy(provider);
-      if (!strategy) {
-        sendResponse({ collected: 0, articles: 0, reactions: 0 });
-        return;
-      }
-      const status = await runActiveFetch({
-        strategy,
-        apiKey,
-        mode: "onDemand",
-        onCapture: (endpoint, payload) => {
-          handleRuntimeMessage(store, {
-            action: "CAPTURED_PAYLOAD",
-            provider,
-            endpoint,
-            payload,
-            pageUrl: "https://dev.to",
-            timestamp: new Date().toISOString(),
-          });
-        },
+    hydration
+      .then(() => chrome.storage.local.get("devtoApiKey"))
+      .then(async (result) => {
+        const apiKey = (result.devtoApiKey as string | undefined) ?? null;
+        const strategy = getActiveFetchStrategy(provider);
+        if (!strategy) {
+          sendResponse({ collected: 0, articles: 0, reactions: 0 });
+          return;
+        }
+        const status = await runActiveFetch({
+          strategy,
+          apiKey,
+          mode: "onDemand",
+          onCapture: (endpoint, payload, url) => {
+            handleRuntimeMessage(store, {
+              action: "CAPTURED_PAYLOAD",
+              provider,
+              endpoint,
+              payload,
+              url,
+              pageUrl: "https://dev.to",
+              timestamp: new Date().toISOString(),
+            });
+          },
+        });
+        persistSession();
+        sendResponse(status);
       });
-      persistSession();
-      sendResponse(status);
-    });
     return true;
   }
 
