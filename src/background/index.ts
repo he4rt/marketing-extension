@@ -1,6 +1,6 @@
+import { getActiveFetchStrategy } from "../providers/active-fetch-registry";
 import type { BackgroundStore, EndpointStore, SocialProvider } from "../shared/domain";
 import type { RuntimeMessage } from "../shared/messages";
-import { getActiveFetchStrategy } from "../providers/active-fetch-registry";
 import { runActiveFetch } from "./active-fetch-scheduler";
 import { createStore, handleRuntimeMessage } from "./controller";
 
@@ -164,7 +164,7 @@ chrome.runtime.onMessage.addListener((request: RuntimeMessage, _sender, sendResp
     return true;
   }
 
-  if (request.action === "RUN_ACTIVE_FETCH") {
+  if (request.action === "RUN_ACTIVE_FETCH" && request.provider === "devto") {
     const provider = request.provider;
     chrome.storage.local.get("devtoApiKey").then(async (result) => {
       const apiKey = (result.devtoApiKey as string | undefined) ?? null;
