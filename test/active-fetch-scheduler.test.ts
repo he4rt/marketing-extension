@@ -185,4 +185,25 @@ describe("active-fetch-scheduler", () => {
     expect(status.collected).toBe(1);
     expect(captured).toEqual(["reactions"]);
   });
+
+  test("g) 404 em reactions (artigo arquivado): pula silenciosamente, analytics processa", async () => {
+    const fetchFn: FetchFn = async (url) => {
+      const status = String(url).includes("reactions") ? 404 : 200;
+      return new Response(JSON.stringify({}), { status });
+    };
+
+    const captured: string[] = [];
+    const status = await runActiveFetch({
+      strategy: stubStrategy([makeTarget("1")]),
+      apiKey: "key",
+      mode: "onDemand",
+      fetchFn,
+      onCapture: (endpoint) => captured.push(endpoint),
+      delayMs: 0,
+    });
+
+    expect(status.sessionNeeded).toBeUndefined();
+    expect(status.collected).toBe(1);
+    expect(captured).toEqual(["analytics"]);
+  });
 });

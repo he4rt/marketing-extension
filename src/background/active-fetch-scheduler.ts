@@ -9,7 +9,7 @@ export async function runActiveFetch(opts: {
   apiKey: string | null;
   mode: "onDemand" | "afk";
   fetchFn?: FetchFn;
-  onCapture: (endpoint: string, payload: unknown) => void;
+  onCapture: (endpoint: string, payload: unknown, url: string) => void;
   delayMs?: number;
 }): Promise<ActiveFetchStatus> {
   const { strategy, apiKey, mode, fetchFn = fetch as FetchFn, onCapture, delayMs = 300 } = opts;
@@ -36,16 +36,15 @@ export async function runActiveFetch(opts: {
     if (i > 0) await sleep(delayMs);
     try {
       const fetchOpts: RequestInit =
-        req.auth === "api-key"
-          ? { headers: { "api-key": apiKey } }
-          : { credentials: "include" };
+        req.auth === "api-key" ? { headers: { "api-key": apiKey } } : { credentials: "include" };
       const res = await fetchFn(req.url, fetchOpts);
       if (res.status === 401 || res.status === 403) {
         sessionNeeded = true;
         continue;
       }
+      if (!res.ok) continue;
       const payload = await res.json();
-      onCapture(req.endpoint, payload);
+      onCapture(req.endpoint, payload, req.url);
       collected++;
       if (req.endpoint === "reactions") reactionCount++;
     } catch {
