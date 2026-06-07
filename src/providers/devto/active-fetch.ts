@@ -32,19 +32,19 @@ export const devtoActiveFetchStrategy: ActiveFetchStrategy = {
     });
     if (!res.ok) return [];
     const articles = (await res.json()) as Array<{ id: number }>;
-    return articles.map((a) => ({ id: String(a.id), meta: a }));
+    return articles.map((a) => ({ id: String(a.id) }));
   },
   requestsFor(target) {
     return [
       {
         endpoint: "analytics",
-        url: `https://dev.to/api/analytics/historical?article_id=${target.id}`,
+        url: `https://dev.to/api/analytics/dashboard?article_id=${target.id}`,
         auth: "api-key",
         afkSafe: true,
       },
       {
         endpoint: "reactions",
-        url: `https://dev.to/api/reactions?article_id=${target.id}`,
+        url: `https://dev.to/reactions?article_id=${target.id}`,
         auth: "cookie",
         afkSafe: false,
       },
