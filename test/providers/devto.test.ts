@@ -50,13 +50,13 @@ describe("parseAnalytics", () => {
   test("mapeia payload completo para DevToArticleAnalytics", () => {
     const result = parseAnalytics(ARTICLE_ID, rawAnalytics);
     expect(result).not.toBeNull();
-    expect(result!.article_id).toBe(ARTICLE_ID);
-    expect(result!.totals.follows.total).toBe(1);
-    expect(result!.totals.reactions.total).toBe(1);
-    expect(result!.totals.reactions.unicorn).toBe(1);
-    expect(result!.totals.page_views.total).toBe(0);
-    expect(result!.historical).toEqual({ "2026-06-03": { reactions: { total: 1 } } });
-    expect(result!.follower_engagement?.total_followers).toBe(1);
+    expect(result?.article_id).toBe(ARTICLE_ID);
+    expect(result?.totals.follows.total).toBe(1);
+    expect(result?.totals.reactions.total).toBe(1);
+    expect(result?.totals.reactions.unicorn).toBe(1);
+    expect(result?.totals.page_views.total).toBe(0);
+    expect(result?.historical).toEqual({ "2026-06-03": { reactions: { total: 1 } } });
+    expect(result?.follower_engagement?.total_followers).toBe(1);
   });
 
   test("retorna null se payload não tem totals", () => {
@@ -66,9 +66,9 @@ describe("parseAnalytics", () => {
 
   test("preenche zeros para campos ausentes em totals", () => {
     const result = parseAnalytics(ARTICLE_ID, { totals: {} });
-    expect(result!.totals.page_views.total).toBe(0);
-    expect(result!.totals.reactions.total).toBe(0);
-    expect(result!.totals.follows.total).toBe(0);
+    expect(result?.totals.page_views.total).toBe(0);
+    expect(result?.totals.reactions.total).toBe(0);
+    expect(result?.totals.follows.total).toBe(0);
   });
 });
 
@@ -77,15 +77,15 @@ describe("parseReactions", () => {
     const engagements = parseReactions(ARTICLE_ID, rawReactions, "2026-06-06T00:00:00Z");
     expect(engagements).toHaveLength(1);
 
-    const first = engagements[0]!;
-    expect(first.engagement_id).toBe("20700191");
-    expect(first.publication_id).toBe(ARTICLE_ID);
-    expect(first.provider).toBe("devto");
-    expect(first.kind).toBe("like");
-    expect(first.actor.provider_user_id).toBe("894593");
-    expect(first.actor.username).toBe("894593");
-    expect(first.engaged_at).toBe("2026-06-03T14:39:00.092Z");
-    expect(first.captured_at).toBe("2026-06-06T00:00:00Z");
+    const first = engagements[0];
+    expect(first?.engagement_id).toBe("20700191");
+    expect(first?.publication_id).toBe(ARTICLE_ID);
+    expect(first?.provider).toBe("devto");
+    expect(first?.kind).toBe("like");
+    expect(first?.actor.provider_user_id).toBe("894593");
+    expect(first?.actor.username).toBe("894593");
+    expect(first?.engaged_at).toBe("2026-06-03T14:39:00.092Z");
+    expect(first?.captured_at).toBe("2026-06-06T00:00:00Z");
   });
 
   test("ignora reactions sem id ou sem user_id", () => {
@@ -94,7 +94,7 @@ describe("parseReactions", () => {
     };
     const result = parseReactions(ARTICLE_ID, payload, "");
     expect(result).toHaveLength(1);
-    expect(result[0]!.engagement_id).toBe("3");
+    expect(result[0]?.engagement_id).toBe("3");
   });
 
   test("retorna [] se payload não tem reactions", () => {
@@ -135,7 +135,7 @@ describe("devtoProvider.processCapture", () => {
     devtoProvider.processCapture(store, makeCapture("analytics", rawAnalytics, ANALYTICS_URL));
     const devto = store.platforms.devto as DevToStore;
     expect(devto.extra.analytics[ARTICLE_ID]).toBeDefined();
-    expect(devto.extra.analytics[ARTICLE_ID]!.totals.reactions.unicorn).toBe(1);
+    expect(devto.extra.analytics[ARTICLE_ID]?.totals.reactions.unicorn).toBe(1);
   });
 
   test("reactions: armazena em engagementsByPublication", () => {
@@ -144,7 +144,7 @@ describe("devtoProvider.processCapture", () => {
     const devto = store.platforms.devto as DevToStore;
     const key = publicationKey("devto", ARTICLE_ID);
     expect(devto.engagementsByPublication[key]).toHaveLength(1);
-    expect(devto.engagementsByPublication[key]![0]!.actor.provider_user_id).toBe("894593");
+    expect(devto.engagementsByPublication[key]?.[0]?.actor.provider_user_id).toBe("894593");
   });
 
   test("reactions: substitui lista ao re-processar (snapshot completo)", () => {

@@ -1,5 +1,6 @@
 import type { ActiveFetchFacet } from "../capture/active-fetch";
 import type { BackgroundProviderFacet } from "../providers/contract";
+import { buildPlatformDataDevto, computeSummaryDevto, devtoProvider } from "../providers/devto";
 import {
   buildPlatformDataInstagram,
   computeSummaryInstagram,
@@ -15,7 +16,6 @@ import {
 } from "../providers/linkedin";
 import { getCalibration, isCalibrated } from "../providers/linkedin/active-fetch/calibration";
 import { linkedinActiveFetchFacet } from "../providers/linkedin/active-fetch/facet";
-import { devtoProvider } from "../providers/devto";
 import { publicationKey } from "../providers/shared/utils";
 import { buildPlatformDataX, computeSummaryX, xProvider } from "../providers/x";
 import type {
@@ -333,12 +333,17 @@ function buildExportJSON(store: BackgroundStore): ExportJSON {
     for (const u of entry.users) liEngagers.add(u.urn || u.activity_urn || "");
   for (const entry of Object.values(liExtra.comments))
     for (const c of entry.items) liEngagers.add(c.author.provider_user_id || c.author.username);
+  const dtEngs = Object.values(store.platforms.devto.engagementsByPublication).flat();
 
   const allEngagers = new Set([
     ...xEngs.map((e) => e.actor.provider_user_id || e.actor.username),
     ...igEngs.map((e) => e.actor.provider_user_id || e.actor.username),
     ...liEngagers,
+    ...dtEngs.map((e) => e.actor.provider_user_id || e.actor.username),
   ]);
+
+  const dtArticles = Object.values(store.platforms.devto.extra.analytics);
+  const hasDevto = dtArticles.length > 0;
 
   return {
     schema_version: 3,
@@ -355,6 +360,7 @@ function buildExportJSON(store: BackgroundStore): ExportJSON {
       x: buildPlatformDataX(store),
       instagram: buildPlatformDataInstagram(store),
       linkedin: buildPlatformDataLinkedin(store),
+      ...(hasDevto ? { devto: buildPlatformDataDevto(store) } : {}),
     },
     unified: {
       summary: {
@@ -362,7 +368,8 @@ function buildExportJSON(store: BackgroundStore): ExportJSON {
           total_content:
             Object.values(store.platforms.x.publications).length +
             Object.values(store.platforms.instagram.publications).length +
-            Object.values(liExtra.posts).length,
+            Object.values(liExtra.posts).length +
+            dtArticles.length,
           total_likes:
             Object.values(store.platforms.x.publications).reduce(
               (s, p) => s + p.metrics.like_count,
@@ -372,17 +379,20 @@ function buildExportJSON(store: BackgroundStore): ExportJSON {
               (s, p) => s + p.metrics.like_count,
               0,
             ) +
-            Object.values(liExtra.posts).reduce((s, p) => s + p.metrics.like_count, 0),
+            Object.values(liExtra.posts).reduce((s, p) => s + p.metrics.like_count, 0) +
+            dtArticles.reduce((s, a) => s + a.totals.reactions.total, 0),
           total_comments:
             Object.values(store.platforms.x.commentsByPublication).flat().length +
             Object.values(store.platforms.instagram.commentsByPublication).flat().length +
-            Object.values(liExtra.posts).reduce((s, p) => s + p.metrics.comment_count, 0),
+            Object.values(liExtra.posts).reduce((s, p) => s + p.metrics.comment_count, 0) +
+            dtArticles.reduce((s, a) => s + a.totals.comments.total, 0),
           unique_engagers: allEngagers.size,
         },
         by_platform: {
           x: computeSummaryX(store),
           instagram: computeSummaryInstagram(store),
           linkedin: computeSummaryLinkedin(store),
+          ...(hasDevto ? { devto: computeSummaryDevto(store) } : {}),
         },
       },
     },

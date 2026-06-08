@@ -893,3 +893,178 @@ exports[`golden-master export v3 LinkedIn (search) 1`] = `
   },
 }
 `;
+
+exports[`golden-master export v3 dev.to 1`] = `
+{
+  "meta": {
+    "exported_at": "<ts>",
+    "handles": {
+      "_": "erikmazzelli",
+      "devto": "erikmazzelli",
+    },
+    "profiles": {
+      "instagram": {
+        "username": "erikmazzelli",
+      },
+      "linkedin": {
+        "username": "erikmazzelli",
+      },
+      "x": {
+        "username": "erikmazzelli",
+      },
+    },
+  },
+  "per_platform": {
+    "devto": {
+      "content": [
+        {
+          "analytics": {
+            "article_id": "123456",
+            "follower_engagement": {
+              "engaged_followers": 5,
+              "ratio": 0.119,
+              "total_followers": 42,
+            },
+            "historical": {
+              "2026-06-01": {
+                "reactions": {
+                  "total": 3,
+                },
+              },
+              "2026-06-03": {
+                "reactions": {
+                  "total": 2,
+                },
+              },
+            },
+            "referrers": {
+              "domains": [
+                {
+                  "count": 10,
+                  "domain": "google.com",
+                },
+              ],
+            },
+            "totals": {
+              "comments": {
+                "total": 2,
+              },
+              "follows": {
+                "total": 3,
+              },
+              "page_views": {
+                "average_read_time_in_seconds": 90,
+                "total": 120,
+                "total_read_time_in_seconds": 10800,
+              },
+              "reactions": {
+                "exploding_head": 0,
+                "fire": 0,
+                "like": 2,
+                "raised_hands": 0,
+                "readinglist": 1,
+                "total": 5,
+                "unicorn": 2,
+                "unique_reactors": 4,
+              },
+            },
+          },
+          "article_id": "123456",
+          "engagers": {
+            "reactions": [
+              {
+                "actor": {
+                  "avatar_url": "",
+                  "name": "894593",
+                  "provider": "devto",
+                  "provider_user_id": "894593",
+                  "username": "894593",
+                },
+                "captured_at": "<ts>",
+                "engaged_at": "2026-06-03T14:39:00.092Z",
+                "engagement_id": "20700191",
+                "kind": "like",
+                "provider": "devto",
+                "publication_id": "123456",
+              },
+              {
+                "actor": {
+                  "avatar_url": "",
+                  "name": "894594",
+                  "provider": "devto",
+                  "provider_user_id": "894594",
+                  "username": "894594",
+                },
+                "captured_at": "<ts>",
+                "engaged_at": "2026-06-01T10:00:00.000Z",
+                "engagement_id": "20700192",
+                "kind": "like",
+                "provider": "devto",
+                "publication_id": "123456",
+              },
+            ],
+          },
+        },
+      ],
+    },
+    "instagram": {
+      "content": [],
+    },
+    "linkedin": {
+      "content": [],
+    },
+    "x": {
+      "content": [],
+      "engagers": {
+        "likes_by_tweet": {},
+        "replies": [],
+      },
+    },
+  },
+  "schema_version": 3,
+  "unified": {
+    "summary": {
+      "all": {
+        "total_comments": 2,
+        "total_content": 1,
+        "total_likes": 5,
+        "unique_engagers": 2,
+      },
+      "by_platform": {
+        "devto": {
+          "total_articles": 1,
+          "total_engagers": 2,
+          "total_page_views": 120,
+          "total_reactions": 5,
+        },
+        "instagram": {
+          "total_comments": 0,
+          "total_content": 0,
+          "total_likes": 0,
+          "total_views": 0,
+        },
+        "linkedin": {
+          "total_audience_interactions": 0,
+          "total_comment_items": 0,
+          "total_comment_reaction_users": 0,
+          "total_comments": 0,
+          "total_content": 0,
+          "total_likes": 0,
+          "total_reaction_users": 0,
+          "total_repost_users": 0,
+          "total_shares": 0,
+        },
+        "x": {
+          "total_bookmarks": 0,
+          "total_content": 0,
+          "total_likes": 0,
+          "total_quotes": 0,
+          "total_replies": 0,
+          "total_retweets": 0,
+          "total_views": 0,
+        },
+      },
+    },
+  },
+}
+`;

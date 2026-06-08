@@ -412,10 +412,30 @@ export type ExportV3PlatformLinkedin = {
   content: ExportLinkedInPost[];
 };
 
+export type ExportDevtoArticle = {
+  article_id: string;
+  analytics: DevToArticleAnalytics;
+  engagers: {
+    reactions: SocialEngagement[];
+  };
+};
+
+export type ExportV3PlatformDevto = {
+  content: ExportDevtoArticle[];
+};
+
+export type ExportSummaryDevto = {
+  total_articles: number;
+  total_page_views: number;
+  total_reactions: number;
+  total_engagers: number;
+};
+
 export type ExportV3PerPlatform = {
   x: ExportV3PlatformX;
   instagram: ExportV3PlatformInstagram;
   linkedin: ExportV3PlatformLinkedin;
+  devto?: ExportV3PlatformDevto;
 };
 
 export type ExportSummaryX = {
@@ -460,6 +480,7 @@ export type ExportV3Summary = {
     x?: ExportSummaryX;
     instagram?: ExportSummaryInstagram;
     linkedin?: ExportSummaryLinkedin;
+    devto?: ExportSummaryDevto;
   };
 };
 

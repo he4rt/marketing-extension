@@ -79,9 +79,11 @@ function DevtoApiKeySection() {
 
   // Descobre no mount se já há uma key guardada (o background só responde se existe).
   useEffect(() => {
-    void send<{ apiKey: string | null } | undefined>({ action: "GET_DEVTO_API_KEY" }).then((res) => {
-      hasKey.value = res?.apiKey != null && res.apiKey !== "";
-    });
+    void send<{ apiKey: string | null } | undefined>({ action: "GET_DEVTO_API_KEY" }).then(
+      (res) => {
+        hasKey.value = res?.apiKey != null && res.apiKey !== "";
+      },
+    );
   }, []);
 
   async function save() {
@@ -103,9 +105,7 @@ function DevtoApiKeySection() {
 
   return (
     <>
-      <h3 class="mb-3 mt-6 font-mono text-[10px] uppercase tracking-[0.14em] text-ink-3">
-        dev.to
-      </h3>
+      <h3 class="mb-3 mt-6 font-mono text-[10px] uppercase tracking-[0.14em] text-ink-3">dev.to</h3>
       {hasKey.value ? (
         <div class="mb-2 flex items-center gap-2.5 rounded-xl border border-line-2 bg-card py-2 pl-3.5 pr-1.5">
           <span class="min-w-[64px] text-xs font-semibold text-dt">api-key</span>
