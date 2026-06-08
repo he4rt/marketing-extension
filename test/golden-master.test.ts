@@ -4,6 +4,12 @@ import { join } from "node:path";
 import { createStore, handleRuntimeMessage } from "../src/background/controller";
 import type { RuntimeMessage } from "../src/shared/messages";
 import {
+  devtoAnalyticsPayload,
+  devtoAnalyticsUrl,
+  devtoReactionsPayload,
+  devtoReactionsUrl,
+} from "./fixtures/devto-payloads";
+import {
   instagramCommentsPayload,
   instagramFeedPayload,
   instagramLikersPayload,
@@ -187,6 +193,35 @@ describe("golden-master export v3", () => {
       endpoint: "searchResultsContent",
       payload: linkedinSearchSduiPayload,
       pageUrl: "https://www.linkedin.com/search/results/content/?keywords=Laravel+Day+SP",
+    });
+
+    expect(exportOf(send)).toMatchSnapshot();
+  });
+
+  // Cenário NOVO: provider dev.to (Background-only). Simula um Active Fetch bem-sucedido:
+  // analytics + reactions de um artigo. Snapshot NOVO — gerado na 1a execução; snapshots
+  // existentes (x/instagram/linkedin) permanecem byte-idênticos (devto é aditivo: só aparece
+  // em per_platform/by_platform quando há dados; all.* contribui 0 em stores vazios).
+  test("dev.to", () => {
+    const { send } = harness();
+    send({ action: "SET_HANDLE", handle: "erikmazzelli", provider: "devto" });
+    send({
+      action: "CAPTURED_PAYLOAD",
+      provider: "devto",
+      endpoint: "analytics",
+      payload: devtoAnalyticsPayload,
+      url: devtoAnalyticsUrl,
+      pageUrl: "https://dev.to/dashboard",
+      timestamp: TS,
+    });
+    send({
+      action: "CAPTURED_PAYLOAD",
+      provider: "devto",
+      endpoint: "reactions",
+      payload: devtoReactionsPayload,
+      url: devtoReactionsUrl,
+      pageUrl: "https://dev.to/dashboard",
+      timestamp: TS,
     });
 
     expect(exportOf(send)).toMatchSnapshot();
