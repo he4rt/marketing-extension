@@ -8,3 +8,6 @@ dist/
 # Python (scripts de análise)
 __pycache__/
 *.pyc
+
+# IDE
+.idea/
