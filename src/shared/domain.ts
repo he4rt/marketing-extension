@@ -247,26 +247,36 @@ export type LinkedInStore = NormalizedStore & {
 
 // DevTo types ---------------------------------------------------------------
 
+export type DevToReactionCounts = {
+  total: number;
+  like: number;
+  readinglist: number;
+  unicorn: number;
+  exploding_head: number;
+  raised_hands: number;
+  fire: number;
+  unique_reactors: number;
+};
+
 export type DevToArticleAnalytics = {
   article_id: string;
   totals: {
-    page_views: number;
-    total_read_time_seconds: number;
-    average_read_time_seconds: number;
-    follows: number;
-    comments: number;
-    reactions: {
+    comments: { total: number };
+    follows: { total: number };
+    reactions: DevToReactionCounts;
+    page_views: {
       total: number;
-      unique_reactors: number;
-      like: number;
-      readinglist: number;
-      unicorn: number;
-      exploding_head: number;
-      raised_hands: number;
-      fire: number;
+      average_read_time_in_seconds: number;
+      total_read_time_in_seconds: number;
     };
   };
-  daily: Record<string, unknown>;
+  historical: Record<string, unknown>;
+  follower_engagement?: {
+    total_followers: number;
+    engaged_followers: number;
+    ratio: number;
+  };
+  referrers?: { domains: unknown[] };
 };
 
 export type DevToExtra = {
