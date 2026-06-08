@@ -10,10 +10,6 @@ import type { CapturedPayloadMessage } from "../../../shared/messages";
 import { publicationKey } from "../../shared/utils";
 import { parseLinkedInSearchSdui } from "./sdui";
 
-// Endpoint lógico da captura SDUI da busca (declarado em capture.ts via
-// responseFormat:"text"). O `payload` chega como STRING (stream React-Flight).
-export const SEARCH_ENDPOINT = "searchResultsContent";
-
 // Lê a query ativa (`?keywords=`) da URL da SRP. Sem pageUrl ou sem keywords → "".
 // Defensivo: URL malformada nunca derruba o processCapture.
 function activeQuery(pageUrl?: string): string {
