@@ -1,5 +1,6 @@
 import type { ActiveFetchFacet } from "../capture/active-fetch";
 import type { BackgroundProviderFacet } from "../providers/contract";
+import { devtoProvider } from "../providers/devto";
 import {
   buildPlatformDataInstagram,
   computeSummaryInstagram,
@@ -15,7 +16,6 @@ import {
 } from "../providers/linkedin";
 import { getCalibration, isCalibrated } from "../providers/linkedin/active-fetch/calibration";
 import { linkedinActiveFetchFacet } from "../providers/linkedin/active-fetch/facet";
-import { devtoProvider } from "../providers/devto";
 import { publicationKey } from "../providers/shared/utils";
 import { buildPlatformDataX, computeSummaryX, xProvider } from "../providers/x";
 import type {
