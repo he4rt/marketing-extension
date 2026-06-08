@@ -1,14 +1,14 @@
 import { recordProvenance, storePublication } from "../../../background/store";
-import type {
-  BackgroundStore,
-  LinkedInPostData,
-  SocialMetrics,
-  SocialPublication,
-} from "../../../shared/domain";
+import type { BackgroundStore, SocialMetrics, SocialPublication } from "../../../shared/domain";
 import { logHe4rt } from "../../../shared/log";
 import type { CapturedPayloadMessage } from "../../../shared/messages";
 import { publicationKey } from "../../shared/utils";
 import { parseLinkedInSearchSdui } from "./sdui";
+import { publicationToPostData } from "./sdui/post-data";
+
+// Re-export para compatibilidade com importadores existentes (a derivação mora em
+// sdui/post-data.ts desde a decomposição member/org + ugcPost).
+export { publicationToPostData };
 
 // Lê a query ativa (`?keywords=`) da URL da SRP. Sem pageUrl ou sem keywords → "".
 // Defensivo: URL malformada nunca derruba o processCapture.
@@ -19,42 +19,6 @@ function activeQuery(pageUrl?: string): string {
   } catch {
     return "";
   }
-}
-
-// Deriva um LinkedInPostData mínimo de uma SocialPublication da busca, para que o
-// post apareça no export v3 pelo MESMO caminho do feed (buildPlatformDataLinkedin
-// itera lstore.feedOrder + lstore.posts). id = activity_urn; share_urn vazio
-// (a busca não expõe o share urn); métricas espelhadas da SocialMetrics.
-export function publicationToPostData(
-  pub: SocialPublication,
-  breakdown: Record<string, number> = {},
-): LinkedInPostData {
-  return {
-    id: pub.publication_id,
-    activity_urn: pub.publication_id,
-    share_urn: "",
-    text: pub.text,
-    type: "original",
-    author: {
-      urn: pub.author.provider_user_id,
-      name: pub.author.name,
-      headline: pub.author.full_name ?? "",
-      avatar_url: pub.author.avatar_url ?? "",
-      vanity_name: pub.author.username,
-    },
-    metrics: {
-      like_count: pub.metrics.like_count,
-      comment_count: pub.metrics.comment_count,
-      share_count: pub.metrics.repost_count,
-      total_reactions: pub.metrics.like_count,
-      reaction_breakdown: breakdown,
-    },
-    hashtags: pub.hashtags,
-    media: [],
-    created_at: pub.created_at,
-    timestamp_text: "",
-    source: pub.source ?? "search_sdui",
-  };
 }
 
 function metricTotal(m: SocialMetrics): number {
@@ -84,7 +48,9 @@ export function processLinkedInSearchCapture(
   const lstore = store.platforms.linkedin.extra;
   const query = activeQuery(request.pageUrl);
 
-  const { publications, unreadable, breakdowns } = parseLinkedInSearchSdui(String(request.payload));
+  const { publications, unreadable, breakdowns, rawNodes } = parseLinkedInSearchSdui(
+    String(request.payload),
+  );
 
   // Acumula os nós em drift (#18). O parser é defensivo e nunca lança; o contador de
   // ilegíveis é o sinal de saúde do shape SDUI exibido no popup. Soma entre capturas
@@ -105,7 +71,7 @@ export function processLinkedInSearchCapture(
       breakdown = previous.metrics.reaction_breakdown;
     }
 
-    const post = publicationToPostData(pub, breakdown);
+    const post = publicationToPostData(pub, breakdown, rawNodes[pub.publication_id] ?? "");
     lstore.posts[post.id] = post;
     if (!lstore.feedOrder.includes(post.id)) lstore.feedOrder.push(post.id);
 
