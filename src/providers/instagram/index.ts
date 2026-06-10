@@ -388,6 +388,80 @@ export function computeSummaryInstagram(store: BackgroundStore): ExportSummaryIn
   };
 }
 
+// Contract hooks — extraídos de handleRuntimeMessage para desacoplar do controller.
+
+function buildPlatformData(store: BackgroundStore) {
+  const istore = store.platforms.instagram;
+  const normalized: import("../../shared/domain").NormalizedStore = {
+    publications: istore.publications,
+    commentsByPublication: istore.commentsByPublication,
+    engagementsByPublication: istore.engagementsByPublication,
+  };
+  return {
+    type: "instagram" as const,
+    ...normalized,
+    visibleCount: istore.visiblePublications.length,
+    lastUpdated: store.lastUpdated,
+  };
+}
+
+function computePopupSummary(store: BackgroundStore) {
+  const igPubs = Object.values(store.platforms.instagram.publications);
+  const igEngs = Object.values(store.platforms.instagram.engagementsByPublication).flat();
+  const igEngagers = new Set(igEngs.map((e) => e.actor.provider_user_id || e.actor.username));
+  return { content_count: igPubs.length, engager_count: igEngagers.size };
+}
+
+type VisiblePublication = InstagramStore["visiblePublications"][number];
+
+function restoreVisibleData(store: BackgroundStore, saved: unknown) {
+  const { visiblePublications } = saved as { visiblePublications: VisiblePublication[] };
+  store.platforms.instagram.visiblePublications = visiblePublications;
+}
+
+function reprocessVisibleComments(store: BackgroundStore, saved: unknown) {
+  const { visibleComments } = saved as {
+    visibleComments: InstagramStore["visibleComments"];
+  };
+  const commentsByBatch = new Map<string, InstagramStore["visibleComments"]>();
+  for (const c of visibleComments) {
+    const key = c.publication_shortcode;
+    const batch = commentsByBatch.get(key) || [];
+    batch.push({
+      author: {
+        provider: "instagram" as const,
+        provider_user_id: c.author.provider_user_id,
+        username: c.author.username,
+        name: c.author.name,
+        avatar_url: c.author.avatar_url,
+      },
+      captured_at: c.captured_at,
+      comment_id: c.comment_id,
+      like_count: c.like_count,
+      parent_comment_id: c.parent_comment_id,
+      publication_shortcode: c.publication_shortcode,
+      relative_created_at: c.relative_created_at,
+      source: c.source,
+      text: c.text,
+    });
+    commentsByBatch.set(key, batch);
+  }
+  for (const [shortcode, comments] of commentsByBatch) {
+    processVisibleInstagramComments(
+      store,
+      {
+        action: "VISIBLE_COMMENTS",
+        provider: "instagram",
+        pageUrl: `https://www.instagram.com/p/${shortcode}/`,
+        publication_shortcode: shortcode,
+        captured_at: new Date().toISOString(),
+        comments,
+      },
+      { recordRaw: false },
+    );
+  }
+}
+
 // Modos de Scope (#9). O modo "profile" usa a MESMA predicate (isIgProfilePublication) que o
 // filtro de conteúdo de processInstagramCapture — fonte única. (O filtro de comentários,
 // instagramPublicationAllowedForComments, é engajamento e segue à parte.) selects() casa
@@ -422,4 +496,10 @@ export const instagramProvider: BackgroundProviderFacet = {
   id: "instagram",
   processCapture: processInstagramCapture,
   scopeModes,
+  buildPlatformData,
+  computePopupSummary,
+  restoreVisibleData,
+  reprocessVisibleComments,
+  buildExportPlatformData: buildPlatformDataInstagram,
+  computeExportSummary: computeSummaryInstagram,
 };
