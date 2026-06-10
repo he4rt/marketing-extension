@@ -200,8 +200,8 @@ function reprocessPayloads(store: BackgroundStore) {
   store.trackedHandles = trackedHandles;
 
   // Re-seed Instagram visible placeholders (genérico — delega ao provider).
-  if (savedVisible["instagram"]) {
-    const { visiblePublications } = savedVisible["instagram"] as {
+  if (savedVisible.instagram) {
+    const { visiblePublications } = savedVisible.instagram as {
       visiblePublications: InstagramStore["visiblePublications"];
     };
     visibleInstagramItemsForHandle(store, visiblePublications).forEach((item, index) => {
@@ -244,16 +244,16 @@ function buildExportJSON(store: BackgroundStore): ExportJSON {
 
   // Per-platform export data via dispatch hooks.
   const perPlatform = {
-    x: BACKGROUND_PROVIDERS.x.buildExportPlatformData!(store),
-    instagram: BACKGROUND_PROVIDERS.instagram.buildExportPlatformData!(store),
-    linkedin: BACKGROUND_PROVIDERS.linkedin.buildExportPlatformData!(store),
+    x: BACKGROUND_PROVIDERS.x.buildExportPlatformData?.(store),
+    instagram: BACKGROUND_PROVIDERS.instagram.buildExportPlatformData?.(store),
+    linkedin: BACKGROUND_PROVIDERS.linkedin.buildExportPlatformData?.(store),
   } as ExportJSON["per_platform"];
 
   // Per-platform summaries via dispatch hooks.
   const byPlatform = {
-    x: BACKGROUND_PROVIDERS.x.computeExportSummary!(store),
-    instagram: BACKGROUND_PROVIDERS.instagram.computeExportSummary!(store),
-    linkedin: BACKGROUND_PROVIDERS.linkedin.computeExportSummary!(store),
+    x: BACKGROUND_PROVIDERS.x.computeExportSummary?.(store),
+    instagram: BACKGROUND_PROVIDERS.instagram.computeExportSummary?.(store),
+    linkedin: BACKGROUND_PROVIDERS.linkedin.computeExportSummary?.(store),
   } as ExportJSON["unified"]["summary"]["by_platform"];
 
   return {

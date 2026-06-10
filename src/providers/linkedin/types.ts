@@ -3,7 +3,6 @@ import type {
   NormalizedStore,
   SocialActor,
   SocialComment,
-  SocialPublication,
   TrackedProfile,
 } from "../../shared/domain/core";
 
