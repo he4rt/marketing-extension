@@ -18,6 +18,24 @@ import { publicationKey } from "../shared/utils";
 import { getCalibration, harvestSignature, isCalibrated } from "./active-fetch/calibration";
 import { registry } from "./process/registry";
 import { searchScopeMode } from "./search/scope";
+import type { LinkedInStore } from "./types";
+
+export function emptyLinkedInStore(): LinkedInStore {
+  return {
+    publications: {},
+    commentsByPublication: {},
+    engagementsByPublication: {},
+    extra: {
+      posts: {},
+      reactions: {},
+      reposts: {},
+      comments: {},
+      commentReactions: {},
+      accountInfo: null,
+      feedOrder: [],
+    },
+  };
+}
 
 export function processLinkedInCapture(store: BackgroundStore, request: CapturedPayloadMessage) {
   if (request.url) harvestSignature(request.url, request.signature);

@@ -1,24 +1,23 @@
 import type { ActiveFetchFacet } from "../capture/active-fetch";
 import type { BackgroundProviderFacet } from "../providers/contract";
 import {
+  emptyInstagramStore,
   instagramPlaceholderPublication,
   instagramProvider,
   processVisibleInstagramComments,
   visibleInstagramItemsForHandle,
 } from "../providers/instagram";
-import { linkedinProvider } from "../providers/linkedin";
+import { emptyLinkedInStore, linkedinProvider } from "../providers/linkedin";
 import { linkedinActiveFetchFacet } from "../providers/linkedin/active-fetch/facet";
 import { publicationKey } from "../providers/shared/utils";
-import { xProvider } from "../providers/x";
+import { emptyXStore, xProvider } from "../providers/x";
 import type {
   BackgroundStore,
   ExportJSON,
   ExportV3Meta,
   InstagramStore,
-  LinkedInStore,
   NormalizedStore,
   SocialProvider,
-  XStore,
 } from "../shared/domain";
 import type { CapturedPayloadMessage, RuntimeMessage } from "../shared/messages";
 import { sortPublications } from "../shared/sort";
@@ -29,49 +28,6 @@ export type MessageContext = {
   log?: (message: string) => void;
   persistHandle?: (handle: string) => void;
 };
-
-function emptyXStore(): XStore {
-  return {
-    tweets: {},
-    favoriters: {},
-    accountInfo: null,
-    communityReplies: {},
-    publications: {},
-    commentsByPublication: {},
-    engagementsByPublication: {},
-  };
-}
-
-function emptyInstagramStore(): InstagramStore {
-  return {
-    publicationIdsByShortcode: {},
-    visiblePublications: [],
-    visibleComments: [],
-    publications: {},
-    commentsByPublication: {},
-    engagementsByPublication: {},
-  };
-}
-
-function emptyLinkedInStore(): LinkedInStore {
-  return {
-    // Shape normalizado (alinhado a x/instagram): publications/comments/engagements
-    // do LinkedIn vivem aqui, populados pelo write path per-platform.
-    publications: {},
-    commentsByPublication: {},
-    engagementsByPublication: {},
-    // Riqueza bespoke do LinkedIn (reaction_breakdown, feedOrder, reposts, etc.).
-    extra: {
-      posts: {},
-      reactions: {},
-      reposts: {},
-      comments: {},
-      commentReactions: {},
-      accountInfo: null,
-      feedOrder: [],
-    },
-  };
-}
 
 export function createStore(trackedHandle = ""): BackgroundStore {
   return {

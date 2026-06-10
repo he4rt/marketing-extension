@@ -21,7 +21,21 @@ import {
   processUserTweetsPayload,
 } from "./parser";
 
+import type { XStore } from "./types";
+
 type AnyRecord = Record<string, any>;
+
+export function emptyXStore(): XStore {
+  return {
+    tweets: {},
+    favoriters: {},
+    accountInfo: null,
+    communityReplies: {},
+    publications: {},
+    commentsByPublication: {},
+    engagementsByPublication: {},
+  };
+}
 
 // Predicate do modo "profile" do X: a publicação é do perfil rastreado quando o autor
 // (username = screen_name) casa com o valor de coleta. Fonte ÚNICA — reusada tanto pelo

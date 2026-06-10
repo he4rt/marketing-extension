@@ -30,6 +30,17 @@ import {
   profileFromPublication,
 } from "./parser";
 
+export function emptyInstagramStore(): InstagramStore {
+  return {
+    publicationIdsByShortcode: {},
+    visiblePublications: [],
+    visibleComments: [],
+    publications: {},
+    commentsByPublication: {},
+    engagementsByPublication: {},
+  };
+}
+
 function instagramShortcodeFromUrl(pageUrl?: string) {
   if (!pageUrl) return "";
   return pageUrl.match(/\/(?:p|reel|reels)\/([^/?#]+)/)?.[1] || "";
