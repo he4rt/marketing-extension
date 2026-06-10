@@ -1,22 +1,15 @@
 import type { ActiveFetchFacet } from "../capture/active-fetch";
 import type { BackgroundProviderFacet } from "../providers/contract";
 import {
-  buildPlatformDataInstagram,
-  computeSummaryInstagram,
   instagramPlaceholderPublication,
   instagramProvider,
   processVisibleInstagramComments,
   visibleInstagramItemsForHandle,
 } from "../providers/instagram";
-import {
-  buildPlatformDataLinkedin,
-  computeSummaryLinkedin,
-  linkedinProvider,
-} from "../providers/linkedin";
-import { getCalibration, isCalibrated } from "../providers/linkedin/active-fetch/calibration";
+import { linkedinProvider } from "../providers/linkedin";
 import { linkedinActiveFetchFacet } from "../providers/linkedin/active-fetch/facet";
 import { publicationKey } from "../providers/shared/utils";
-import { buildPlatformDataX, computeSummaryX, xProvider } from "../providers/x";
+import { xProvider } from "../providers/x";
 import type {
   BackgroundStore,
   ExportJSON,
@@ -27,11 +20,7 @@ import type {
   SocialProvider,
   XStore,
 } from "../shared/domain";
-import type {
-  CapturedPayloadMessage,
-  RuntimeMessage,
-  VisibleCommentsMessage,
-} from "../shared/messages";
+import type { CapturedPayloadMessage, RuntimeMessage } from "../shared/messages";
 import { sortPublications } from "../shared/sort";
 import { getActiveFetchStatus, runActiveFetch } from "./active-fetch";
 import { recordRawPayload, storePublication } from "./store";
@@ -217,8 +206,17 @@ function activateContext(
 }
 
 function reprocessPayloads(store: BackgroundStore) {
-  const visiblePublications = [...store.platforms.instagram.visiblePublications];
-  const visibleComments = [...store.platforms.instagram.visibleComments];
+  // Save visible state per provider before clearing.
+  const savedVisible: Record<string, unknown> = {};
+  for (const p of NORMALIZED_PLATFORMS) {
+    if (p === "instagram") {
+      savedVisible[p] = {
+        visiblePublications: [...store.platforms.instagram.visiblePublications],
+        visibleComments: [...store.platforms.instagram.visibleComments],
+      };
+    }
+  }
+
   const providerPageUrls = { ...store.providerPageUrls };
   const pageSessionKeys = { ...store.pageSessionKeys };
   const trackedHandles = { ...store.trackedHandles };
@@ -235,56 +233,33 @@ function reprocessPayloads(store: BackgroundStore) {
   );
 
   clearNormalizedData(store);
-  // Restaura os itens visíveis (DOM) no store per-platform do Instagram antes de
-  // re-seedar placeholders/comentários. visibleComments é refeito pelo loop abaixo;
-  // visiblePublications precisa ser restaurado pois alimenta o filtro de comentários.
-  store.platforms.instagram.visiblePublications = visiblePublications;
+
+  // Restore visible state per provider via dispatch hooks.
+  for (const p of NORMALIZED_PLATFORMS) {
+    BACKGROUND_PROVIDERS[p].restoreVisibleData?.(store, savedVisible[p]);
+  }
+
   store.pageSessionKeys = pageSessionKeys;
   store.providerPageUrls = providerPageUrls;
   store.trackedHandles = trackedHandles;
 
-  visibleInstagramItemsForHandle(store, visiblePublications).forEach((item, index) => {
-    storePublication(store, instagramPlaceholderPublication(item, index + 1));
-  });
+  // Re-seed Instagram visible placeholders (genérico — delega ao provider).
+  if (savedVisible["instagram"]) {
+    const { visiblePublications } = savedVisible["instagram"] as {
+      visiblePublications: InstagramStore["visiblePublications"];
+    };
+    visibleInstagramItemsForHandle(store, visiblePublications).forEach((item, index) => {
+      storePublication(store, instagramPlaceholderPublication(item, index + 1));
+    });
+  }
 
   for (const p of payloads) {
     BACKGROUND_PROVIDERS[p.provider].processCapture(store, p);
   }
 
-  const commentsByBatch = new Map<string, VisibleCommentsMessage["comments"]>();
-  for (const c of visibleComments) {
-    const key = c.publication_shortcode;
-    const batch = commentsByBatch.get(key) || [];
-    batch.push({
-      author: {
-        provider_user_id: c.author.provider_user_id,
-        username: c.author.username,
-        name: c.author.name,
-        avatar_url: c.author.avatar_url,
-      },
-      comment_id: c.comment_id,
-      like_count: c.like_count,
-      parent_comment_id: c.parent_comment_id,
-      publication_shortcode: c.publication_shortcode,
-      relative_created_at: c.relative_created_at,
-      source: c.source,
-      text: c.text,
-    });
-    commentsByBatch.set(key, batch);
-  }
-  for (const [shortcode, comments] of commentsByBatch) {
-    processVisibleInstagramComments(
-      store,
-      {
-        action: "VISIBLE_COMMENTS",
-        provider: "instagram",
-        pageUrl: `https://www.instagram.com/p/${shortcode}/`,
-        publication_shortcode: shortcode,
-        captured_at: new Date().toISOString(),
-        comments,
-      },
-      { recordRaw: false },
-    );
+  // Re-process visible comments per provider via dispatch hooks.
+  for (const p of NORMALIZED_PLATFORMS) {
+    BACKGROUND_PROVIDERS[p].reprocessVisibleComments?.(store, savedVisible[p]);
   }
 }
 
@@ -292,21 +267,8 @@ function reprocessPayloads(store: BackgroundStore) {
 // Export v3
 // ---------------------------------------------------------------------------
 
-// buildPlatformDataX → src/providers/x/index.ts
-
-// buildCommentTree / buildPlatformDataInstagram → src/providers/instagram/index.ts
-
-// buildLinkedInCommentWithReactions / computeLinkedInEngagementMetrics → src/providers/linkedin/index.ts
-
-// buildPlatformDataLinkedin → src/providers/linkedin/index.ts
-
-// computeSummaryX → src/providers/x/index.ts
-
-// computeSummaryInstagram → src/providers/instagram/index.ts
-
-// computeSummaryLinkedin → src/providers/linkedin/index.ts
-
 function buildExportJSON(store: BackgroundStore): ExportJSON {
+  // Cross-provider engager rollup (genérico).
   const xEngs = Object.values(store.platforms.x.engagementsByPublication).flat();
   const igEngs = Object.values(store.platforms.instagram.engagementsByPublication).flat();
   const liExtra = store.platforms.linkedin.extra;
@@ -324,6 +286,20 @@ function buildExportJSON(store: BackgroundStore): ExportJSON {
     ...liEngagers,
   ]);
 
+  // Per-platform export data via dispatch hooks.
+  const perPlatform = {
+    x: BACKGROUND_PROVIDERS.x.buildExportPlatformData!(store),
+    instagram: BACKGROUND_PROVIDERS.instagram.buildExportPlatformData!(store),
+    linkedin: BACKGROUND_PROVIDERS.linkedin.buildExportPlatformData!(store),
+  } as ExportJSON["per_platform"];
+
+  // Per-platform summaries via dispatch hooks.
+  const byPlatform = {
+    x: BACKGROUND_PROVIDERS.x.computeExportSummary!(store),
+    instagram: BACKGROUND_PROVIDERS.instagram.computeExportSummary!(store),
+    linkedin: BACKGROUND_PROVIDERS.linkedin.computeExportSummary!(store),
+  } as ExportJSON["unified"]["summary"]["by_platform"];
+
   return {
     schema_version: 3,
     meta: {
@@ -335,11 +311,7 @@ function buildExportJSON(store: BackgroundStore): ExportJSON {
         x: store.trackedProfiles.x || { username: store.trackedHandle },
       },
     },
-    per_platform: {
-      x: buildPlatformDataX(store),
-      instagram: buildPlatformDataInstagram(store),
-      linkedin: buildPlatformDataLinkedin(store),
-    },
+    per_platform: perPlatform,
     unified: {
       summary: {
         all: {
@@ -363,11 +335,7 @@ function buildExportJSON(store: BackgroundStore): ExportJSON {
             Object.values(liExtra.posts).reduce((s, p) => s + p.metrics.comment_count, 0),
           unique_engagers: allEngagers.size,
         },
-        by_platform: {
-          x: computeSummaryX(store),
-          instagram: computeSummaryInstagram(store),
-          linkedin: computeSummaryLinkedin(store),
-        },
+        by_platform: byPlatform,
       },
     },
   };
@@ -658,67 +626,8 @@ export function handleRuntimeMessage(
   }
 
   if (request.action === "GET_PLATFORM_DATA") {
-    const provider = request.provider;
-    if (provider === "x") {
-      const xstore = store.platforms.x;
-      return {
-        type: "x" as const,
-        publications: xstore.publications,
-        commentsByPublication: xstore.commentsByPublication,
-        engagementsByPublication: xstore.engagementsByPublication,
-        tweets: xstore.tweets,
-        favoriters: xstore.favoriters,
-        communityReplies: xstore.communityReplies,
-        accountInfo: xstore.accountInfo,
-        lastUpdated: store.lastUpdated,
-      };
-    }
-    if (provider === "instagram") {
-      const istore = store.platforms.instagram;
-      const normalized: NormalizedStore = {
-        publications: istore.publications,
-        commentsByPublication: istore.commentsByPublication,
-        engagementsByPublication: istore.engagementsByPublication,
-      };
-      return {
-        type: "instagram" as const,
-        ...normalized,
-        visibleCount: istore.visiblePublications.length,
-        lastUpdated: store.lastUpdated,
-      };
-    }
-    if (provider === "linkedin") {
-      const lstore = store.platforms.linkedin.extra;
-      const enriched = (lstore.feedOrder || [])
-        .map((id) => {
-          const post = lstore.posts[id];
-          if (!post) return null;
-          const shareUrn = post.share_urn;
-          const activityUrn = post.activity_urn;
-          const reactions = lstore.reactions[shareUrn] || lstore.reactions[activityUrn];
-          const reposts = lstore.reposts[shareUrn];
-          const comments = lstore.comments[shareUrn] || lstore.comments[activityUrn];
-          return {
-            ...post,
-            engagers: {
-              reactions: { captured: reactions?.users?.length || 0, total: reactions?.total || 0 },
-              reposts: { captured: reposts?.users?.length || 0, total: reposts?.total || 0 },
-              comments: { captured: comments?.items?.length || 0, total: comments?.total || 0 },
-            },
-          };
-        })
-        .filter(Boolean);
-      // #18: sinais de UX para o popup. `unreadable` = nós SDUI em drift acumulados na
-      // descoberta (sub-linha "M ilegíveis"). `calibrated` = a assinatura Voyager foi
-      // colhida o suficiente p/ ao menos UM endpoint L3 (habilita o botão "Aprofundar").
-      return {
-        type: "linkedin" as const,
-        content: enriched,
-        lastUpdated: store.lastUpdated,
-        unreadable: lstore.searchUnreadable ?? 0,
-        calibrated: isCalibrated(getCalibration()),
-      };
-    }
+    const handler = BACKGROUND_PROVIDERS[request.provider]?.buildPlatformData;
+    if (handler) return handler(store);
     return {
       type: "unknown",
       publications: [],
@@ -729,40 +638,36 @@ export function handleRuntimeMessage(
 
   if (request.action === "GET_ALL_SUMMARY") {
     const byPlatform: Record<string, { content_count: number; engager_count: number }> = {};
+    let totalContent = 0;
 
-    // X
-    const xPubs = Object.values(store.platforms.x.publications);
-    const xEngagers = new Set<string>();
+    for (const p of NORMALIZED_PLATFORMS) {
+      const summary = BACKGROUND_PROVIDERS[p].computePopupSummary?.(store);
+      if (summary) {
+        byPlatform[p] = summary;
+        totalContent += summary.content_count;
+      }
+    }
+
+    // Cross-provider engager rollup: coleta engagers de todas as redes num Set
+    // unificado para contar únicos. A lógica de coleta é genérica (itera o mesmo
+    // store que os providers usam), sem leakage de lógica específica.
+    const allEngagers = new Set<string>();
     for (const favs of Object.values(store.platforms.x.favoriters)) {
-      for (const f of favs) xEngagers.add(f.rest_id || f.screen_name);
+      for (const f of favs) allEngagers.add(f.rest_id || f.screen_name);
     }
-    byPlatform.x = { content_count: xPubs.length, engager_count: xEngagers.size };
-
-    // Instagram
-    const igPubs = Object.values(store.platforms.instagram.publications);
-    const igEngs = Object.values(store.platforms.instagram.engagementsByPublication).flat();
-    const igEngagers = new Set(igEngs.map((e) => e.actor.provider_user_id || e.actor.username));
-    byPlatform.instagram = { content_count: igPubs.length, engager_count: igEngagers.size };
-
-    // LinkedIn
+    for (const e of Object.values(store.platforms.instagram.engagementsByPublication).flat()) {
+      allEngagers.add(e.actor.provider_user_id || e.actor.username);
+    }
     const liExtra = store.platforms.linkedin.extra;
-    const liPubs = Object.values(liExtra.posts);
-    const liEngagers = new Set<string>();
-    for (const entry of Object.values(liExtra.reactions)) {
-      for (const u of entry.users) liEngagers.add(u.provider_user_id || u.username);
-    }
-    for (const entry of Object.values(liExtra.reposts)) {
-      for (const u of entry.users) liEngagers.add(u.urn || u.activity_urn || "");
-    }
-    for (const entry of Object.values(liExtra.comments)) {
-      for (const c of entry.items) liEngagers.add(c.author.provider_user_id || c.author.username);
-    }
-    byPlatform.linkedin = { content_count: liPubs.length, engager_count: liEngagers.size };
+    for (const entry of Object.values(liExtra.reactions))
+      for (const u of entry.users) allEngagers.add(u.provider_user_id || u.username);
+    for (const entry of Object.values(liExtra.reposts))
+      for (const u of entry.users) allEngagers.add(u.urn || u.activity_urn || "");
+    for (const entry of Object.values(liExtra.comments))
+      for (const c of entry.items) allEngagers.add(c.author.provider_user_id || c.author.username);
 
-    const total = xPubs.length + igPubs.length + liPubs.length;
-    const allEngagers = new Set([...xEngagers, ...igEngagers, ...liEngagers]);
     return {
-      total_content: total,
+      total_content: totalContent,
       total_engagers: allEngagers.size,
       by_platform: byPlatform,
       lastUpdated: store.lastUpdated,
