@@ -15,7 +15,7 @@ import type {
 import type { CapturedPayloadMessage } from "../../shared/messages";
 import type { BackgroundProviderFacet, ScopeMode } from "../contract";
 import { publicationKey } from "../shared/utils";
-import { harvestSignature } from "./active-fetch/calibration";
+import { getCalibration, harvestSignature, isCalibrated } from "./active-fetch/calibration";
 import { registry } from "./process/registry";
 import { searchScopeMode } from "./search/scope";
 
@@ -243,6 +243,54 @@ export function computeSummaryLinkedin(store: BackgroundStore): ExportSummaryLin
   };
 }
 
+// Contract hooks — extraídos de handleRuntimeMessage para desacoplar do controller.
+
+function buildPlatformData(store: BackgroundStore) {
+  const lstore = store.platforms.linkedin.extra;
+  const enriched = (lstore.feedOrder || [])
+    .map((id) => {
+      const post = lstore.posts[id];
+      if (!post) return null;
+      const shareUrn = post.share_urn;
+      const activityUrn = post.activity_urn;
+      const reactions = lstore.reactions[shareUrn] || lstore.reactions[activityUrn];
+      const reposts = lstore.reposts[shareUrn];
+      const comments = lstore.comments[shareUrn] || lstore.comments[activityUrn];
+      return {
+        ...post,
+        engagers: {
+          reactions: { captured: reactions?.users?.length || 0, total: reactions?.total || 0 },
+          reposts: { captured: reposts?.users?.length || 0, total: reposts?.total || 0 },
+          comments: { captured: comments?.items?.length || 0, total: comments?.total || 0 },
+        },
+      };
+    })
+    .filter(Boolean);
+  return {
+    type: "linkedin" as const,
+    content: enriched,
+    lastUpdated: store.lastUpdated,
+    unreadable: lstore.searchUnreadable ?? 0,
+    calibrated: isCalibrated(getCalibration()),
+  };
+}
+
+function computePopupSummary(store: BackgroundStore) {
+  const liExtra = store.platforms.linkedin.extra;
+  const liPubs = Object.values(liExtra.posts);
+  const liEngagers = new Set<string>();
+  for (const entry of Object.values(liExtra.reactions)) {
+    for (const u of entry.users) liEngagers.add(u.provider_user_id || u.username);
+  }
+  for (const entry of Object.values(liExtra.reposts)) {
+    for (const u of entry.users) liEngagers.add(u.urn || u.activity_urn || "");
+  }
+  for (const entry of Object.values(liExtra.comments)) {
+    for (const c of entry.items) liEngagers.add(c.author.provider_user_id || c.author.username);
+  }
+  return { content_count: liPubs.length, engager_count: liEngagers.size };
+}
+
 // Modos de Scope declaráveis (#9). O filtro real continua dentro do parser
 // (linkedinFeedToPublications/linkedinFeedToPosts), que casa pelo NOME da organização
 // via substring (actorInfo.name.includes(handle)); selects() espelha esse comportamento
@@ -262,4 +310,8 @@ export const linkedinProvider: BackgroundProviderFacet = {
   id: "linkedin",
   processCapture: processLinkedInCapture,
   scopeModes,
+  buildPlatformData,
+  computePopupSummary,
+  buildExportPlatformData: buildPlatformDataLinkedin,
+  computeExportSummary: computeSummaryLinkedin,
 };
