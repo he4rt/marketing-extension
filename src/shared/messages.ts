@@ -203,6 +203,15 @@ export type ActiveFetchStatusResponse = {
   error?: string; // "uncalibrated" | "session_expired" | "rate_limited" | "error"
 };
 
+export type SetDevtoApiKeyMessage = {
+  action: "SET_DEVTO_API_KEY";
+  apiKey: string | null;
+};
+
+export type GetDevtoApiKeyMessage = {
+  action: "GET_DEVTO_API_KEY";
+};
+
 export type RuntimeMessage =
   | CapturedPayloadMessage
   | GraphqlCapturedMessage
@@ -226,7 +235,9 @@ export type RuntimeMessage =
   | GetRawPayloadsMessage
   | DetectTargetMessage
   | RunActiveFetchMessage
-  | GetActiveFetchStatusMessage;
+  | GetActiveFetchStatusMessage
+  | SetDevtoApiKeyMessage
+  | GetDevtoApiKeyMessage;
 
 export type PageCapturedMessage = {
   endpoint: string;
