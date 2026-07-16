@@ -29,7 +29,7 @@
     "typescript": "^7.0.2"
   },
   "dependencies": {
-    "@preact/signals": "^2.9.2",
+    "@preact/signals": "^2.9.3",
     "preact": "^10.29.7"
   }
 }
