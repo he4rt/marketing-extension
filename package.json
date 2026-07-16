@@ -30,6 +30,6 @@
   },
   "dependencies": {
     "@preact/signals": "^2.9.2",
-    "preact": "^10.29.3"
+    "preact": "^10.29.7"
   }
 }
