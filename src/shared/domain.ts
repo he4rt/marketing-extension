@@ -1,4 +1,4 @@
-export type SocialProvider = "instagram" | "linkedin" | "x";
+export type SocialProvider = "devto" | "instagram" | "linkedin" | "x";
 
 export type SocialActor = {
   avatar_url: string;
@@ -245,6 +245,48 @@ export type LinkedInStore = NormalizedStore & {
   extra: LinkedInExtra;
 };
 
+// DevTo types ---------------------------------------------------------------
+
+export type DevToReactionCounts = {
+  total: number;
+  like: number;
+  readinglist: number;
+  unicorn: number;
+  exploding_head: number;
+  raised_hands: number;
+  fire: number;
+  unique_reactors: number;
+};
+
+export type DevToArticleAnalytics = {
+  article_id: string;
+  totals: {
+    comments: { total: number };
+    follows: { total: number };
+    reactions: DevToReactionCounts;
+    page_views: {
+      total: number;
+      average_read_time_in_seconds: number;
+      total_read_time_in_seconds: number;
+    };
+  };
+  historical: Record<string, unknown>;
+  follower_engagement?: {
+    total_followers: number;
+    engaged_followers: number;
+    ratio: number;
+  };
+  referrers?: { domains: unknown[] };
+};
+
+export type DevToExtra = {
+  analytics: Record<string, DevToArticleAnalytics>;
+};
+
+export type DevToStore = NormalizedStore & {
+  extra: DevToExtra;
+};
+
 // Main store ----------------------------------------------------------------
 
 // Provenance do Scope (#9): para cada publicação capturada, registra QUAL modo de coleta
@@ -271,6 +313,7 @@ export type BackgroundStore = {
     x: XStore;
     instagram: InstagramStore;
     linkedin: LinkedInStore;
+    devto: DevToStore;
   };
 
   // Provenance por publicação, chaveada por publicationKey(provider, id). Ver ScopeProvenance.
