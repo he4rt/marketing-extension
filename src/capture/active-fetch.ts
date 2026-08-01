@@ -17,6 +17,10 @@ import type { CapturedPayloadMessage } from "../shared/messages";
 export type ActiveFetchTarget = {
   id: string; // chave estável (ex.: o próprio activity_urn)
   activityUrn: string; // urn:li:activity:...
+  // Opcional: o ugcPost INLINE descoberto na busca (urn:li:ugcPost:<id>). Quando presente,
+  // o replay aprofunda por ELE (o activity dava 200-vazio em posts de organização). Ausente
+  // → o aprofundamento usa o activityUrn (comportamento legado).
+  ugcPostUrn?: string;
 };
 
 // Envelope sintético que o fan-out injeta no processCapture. NÃO é um shape novo:
