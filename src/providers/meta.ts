@@ -8,9 +8,9 @@ export type ProviderMeta = {
   id: SocialProvider;
   name: string;
   color: string;
-  popupPrefix: string; // prefixo dos ids no popup (x, ig, li)
+  popupPrefix: string; // prefixo dos ids no popup (x, ig, li, dt)
   hosts: string[]; // domínios base para casamento em runtime
-  matches: string[]; // padrões chrome para injeção de content script no manifest
+  matches: string[]; // padrões chrome para content_scripts (vazio = Background-only)
   // Hosts adicionais que o provider precisa permissão para CHAMAR (fetch ativo),
   // separados de `matches` para o split do ADR-0003 (Active Fetch). O manifest une os dois
   // em `host_permissions`; ausente = só os `matches` valem como permissão de host.
@@ -25,6 +25,7 @@ export const PROVIDER_METAS: ProviderMeta[] = [
     popupPrefix: "x",
     hosts: ["x.com", "twitter.com"],
     matches: ["https://x.com/*", "https://twitter.com/*"],
+    hostPermissions: ["https://x.com/*", "https://twitter.com/*"],
   },
   {
     id: "instagram",
@@ -33,6 +34,7 @@ export const PROVIDER_METAS: ProviderMeta[] = [
     popupPrefix: "ig",
     hosts: ["instagram.com"],
     matches: ["https://www.instagram.com/*"],
+    hostPermissions: ["https://www.instagram.com/*"],
   },
   {
     id: "linkedin",
@@ -44,6 +46,15 @@ export const PROVIDER_METAS: ProviderMeta[] = [
     // Active Fetch (L3) replica chamadas Voyager para www.linkedin.com — precisa da
     // permissão de host explícita além dos matches de content script.
     hostPermissions: ["https://www.linkedin.com/*"],
+  },
+  {
+    id: "devto",
+    name: "dev.to",
+    color: "#3b49df",
+    popupPrefix: "dt",
+    hosts: ["dev.to"],
+    matches: [],
+    hostPermissions: ["https://dev.to/*"],
   },
 ];
 
