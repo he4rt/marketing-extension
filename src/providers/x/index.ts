@@ -21,7 +21,21 @@ import {
   processUserTweetsPayload,
 } from "./parser";
 
+import type { XStore } from "./types";
+
 type AnyRecord = Record<string, any>;
+
+export function emptyXStore(): XStore {
+  return {
+    tweets: {},
+    favoriters: {},
+    accountInfo: null,
+    communityReplies: {},
+    publications: {},
+    commentsByPublication: {},
+    engagementsByPublication: {},
+  };
+}
 
 // Predicate do modo "profile" do X: a publicação é do perfil rastreado quando o autor
 // (username = screen_name) casa com o valor de coleta. Fonte ÚNICA — reusada tanto pelo
@@ -125,6 +139,32 @@ export function computeSummaryX(store: BackgroundStore): ExportSummaryX {
   };
 }
 
+// Contract hooks — extraídos de handleRuntimeMessage para desacoplar do controller.
+
+function buildPlatformData(store: BackgroundStore) {
+  const xstore = store.platforms.x;
+  return {
+    type: "x" as const,
+    publications: xstore.publications,
+    commentsByPublication: xstore.commentsByPublication,
+    engagementsByPublication: xstore.engagementsByPublication,
+    tweets: xstore.tweets,
+    favoriters: xstore.favoriters,
+    communityReplies: xstore.communityReplies,
+    accountInfo: xstore.accountInfo,
+    lastUpdated: store.lastUpdated,
+  };
+}
+
+function computePopupSummary(store: BackgroundStore) {
+  const xPubs = Object.values(store.platforms.x.publications);
+  const xEngagers = new Set<string>();
+  for (const favs of Object.values(store.platforms.x.favoriters)) {
+    for (const f of favs) xEngagers.add(f.rest_id || f.screen_name);
+  }
+  return { content_count: xPubs.length, engager_count: xEngagers.size };
+}
+
 // Modos de Scope (#9). O modo "profile" usa a MESMA predicate (isXProfilePublication) que o
 // filtro de processXCapture — fonte única, sem divergência. selects() casa pelo username do
 // autor (= screen_name no X).
@@ -159,4 +199,8 @@ export const xProvider: BackgroundProviderFacet = {
   id: "x",
   processCapture: processXCapture,
   scopeModes,
+  buildPlatformData,
+  computePopupSummary,
+  buildExportPlatformData: buildPlatformDataX,
+  computeExportSummary: computeSummaryX,
 };
