@@ -84,6 +84,7 @@ describe("parseLinkedInSearchSdui — defensivo", () => {
       publications: [],
       unreadable: 0,
       breakdowns: {},
+      rawNodes: {},
     });
   });
 

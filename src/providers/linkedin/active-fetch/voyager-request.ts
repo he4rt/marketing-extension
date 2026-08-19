@@ -28,7 +28,10 @@ export function buildVoyagerRequest(
   if (!queryId) return null; // endpoint não calibrado → pulado pelo scheduler.
   if (!calib.csrfToken) return null; // sem JSESSIONID não há replay autenticável.
 
-  const variables = descriptor.buildVariables(target.activityUrn);
+  // Aprofunda pelo ugcPost INLINE quando presente (org dava 200-vazio no activity); senão,
+  // mantém o activity urn (comportamento legado validado ao vivo).
+  const urn = target.ugcPostUrn ?? target.activityUrn;
+  const variables = descriptor.buildVariables(urn);
   // includeWebMetadata=true espelha o tráfego real da página (sem ele, alguns endpoints 400).
   const url = `${VOYAGER_GRAPHQL}?includeWebMetadata=true&queryId=${queryId}&variables=${variables}`;
 

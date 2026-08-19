@@ -172,6 +172,10 @@ export type LinkedInPostData = {
     headline: string;
     avatar_url: string;
     vanity_name: string;
+    // Opcionais e ADITIVOS: populados SÓ para posts de organização (gated). Membros os
+    // omitem → JSON.stringify descarta undefined → bytes de membro/snapshots inalterados.
+    author_type?: "member" | "organization";
+    company_urn?: string;
   };
   metrics: {
     like_count: number;
