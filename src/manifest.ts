@@ -1,13 +1,16 @@
 import { PROVIDER_METAS } from "./providers/meta";
 
-// Os matches dos content scripts saem do registry de providers.
-const matches = PROVIDER_METAS.flatMap((meta) => meta.matches);
+// content_scripts só para providers com matches (não-vazios; Background-only fica de fora).
+const contentScriptMatches = PROVIDER_METAS.flatMap((meta) => meta.matches);
 
 // host_permissions = união (deduplicada) dos matches com os hostPermissions extras dos
 // providers (split do ADR-0003: alguns providers chamam endpoints via Active Fetch e
 // precisam da permissão de host além de onde injetam content script).
 const hostPermissions = [
-  ...new Set([...matches, ...PROVIDER_METAS.flatMap((meta) => meta.hostPermissions ?? [])]),
+  ...new Set([
+    ...contentScriptMatches,
+    ...PROVIDER_METAS.flatMap((meta) => meta.hostPermissions ?? []),
+  ]),
 ];
 
 const manifest = {
@@ -17,7 +20,8 @@ const manifest = {
   description: "Captura engajamento social da comunidade He4rt Developers",
   // "cookies": o SW lê o JSESSIONID (csrf) de linkedin.com para o replay credenciado do L3.
   // "sidePanel": a UI vive num side panel (substitui o popup) — clique no ícone abre o painel.
-  permissions: ["storage", "tabs", "unlimitedStorage", "cookies", "sidePanel"],
+  // "alarms": o scheduler de Active Fetch (AFK diário) acorda o SW via chrome.alarms.
+  permissions: ["storage", "tabs", "unlimitedStorage", "cookies", "sidePanel", "alarms"],
   host_permissions: hostPermissions,
   background: {
     service_worker: "background.js",
@@ -25,13 +29,13 @@ const manifest = {
   },
   content_scripts: [
     {
-      matches,
+      matches: contentScriptMatches,
       js: ["interceptor.js"],
       run_at: "document_start",
       world: "MAIN",
     },
     {
-      matches,
+      matches: contentScriptMatches,
       js: ["content.js"],
       run_at: "document_start",
       world: "ISOLATED",

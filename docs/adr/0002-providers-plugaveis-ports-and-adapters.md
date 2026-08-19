@@ -46,7 +46,7 @@ Decisões específicas:
 - **Federação total** (cada provider com seu próprio domínio) — rejeitada: o domínio de feed é comum o bastante (post/comentário/engajamento) e a federação perderia os rollups cross-rede que o produto quer (engajadores únicos entre redes).
 - **Tipo único "gordo"** sem `extra` — rejeitada: é exatamente o estado atual. Mapa de `metrics` + `extra` tipado na borda preserva fidelidade sem poluir o core.
 - **Entregar o v4 de eventos agora** — adiada: quebra a ingestão do Hub e é decisão de produto, não de refactor interno. Fica pronto-para-ligar.
-- **`activeFetch`** (extensão disparando requests) — rejeitada por ora: navegação ativa é papel do Playwright (ADR-0001). O catálogo de captura é extensível se isso mudar.
+- **`activeFetch`** (extensão disparando requests) — rejeitada por ora: navegação ativa é papel do Playwright (ADR-0001). O catálogo de captura é extensível se isso mudar. **→ Revisto no [ADR-0003](./0003-active-fetch-provider-devto.md):** o provider dev.to abre essa porta de forma contida (GET à própria conta logada, on-demand + AFK só na analytics).
 - **Big-bang rewrite** — rejeitado: o strangler dá diff revisável por fase e permite bissecar regressões.
 - **Auto-discovery de providers** — rejeitado: registry explícito é tipado e tree-shakeable; com um punhado de redes, auto-discovery só agrega magia.
 
