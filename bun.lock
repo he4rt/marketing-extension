@@ -12,7 +12,7 @@
         "@biomejs/biome": "^2.5.9",
         "@tailwindcss/cli": "^4.3.3",
         "@types/bun": "^1.4.0",
-        "@types/chrome": "^0.2.6",
+        "@types/chrome": "^0.2.7",
         "husky": "^9.1.7",
         "lint-staged": "^17.3.0",
         "tailwindcss": "^4.3.3",
@@ -113,7 +113,7 @@
 
     "@types/bun": ["@types/bun@1.4.0", "", { "dependencies": { "bun-types": "1.4.0" } }, "sha512-K+lZULY23vRgK/CfTjFIV+tyifaNdSMlPh9j+6mQ/cLfpOznLyAuzgV/JQysyECpkBQLVMSyvjlr2fBUSA9wFQ=="],
 
-    "@types/chrome": ["@types/chrome@0.2.6", "", { "dependencies": { "@types/filesystem": "*", "@types/har-format": "*" } }, "sha512-8OgXtL+OcR2IpY2ul5itg0R3xmdceAM4ldcHxh4BFL20p5z7fjhpyP5KuXAp1LIxA7oQgyViKTS9d+W8Sn8jdQ=="],
+    "@types/chrome": ["@types/chrome@0.2.7", "", { "dependencies": { "@types/filesystem": "*", "@types/har-format": "*" } }, "sha512-9kjBozQ+jyDVt1eai3VZqjHDTN95JCuRmbRHOryOltBJmzrTmUw/9r/DznmjRaQ8WlyIfeCA4WNzoj0IvormJA=="],
 
     "@types/filesystem": ["@types/filesystem@0.0.36", "", { "dependencies": { "@types/filewriter": "*" } }, "sha512-vPDXOZuannb9FZdxgHnqSwAG/jvdGM8Wq+6N4D/d80z+D4HWH+bItqsZaVRQykAn6WEVeEkLm2oQigyHtgb0RA=="],
 
