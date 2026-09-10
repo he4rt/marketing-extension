@@ -28,8 +28,9 @@ type QueryIdField = "queryId_reactions" | "queryId_comments" | "queryId_reposts"
 export type VoyagerEndpointDescriptor = {
   id: VoyagerEndpointId;
   queryIdField: QueryIdField;
-  // Monta o `variables=(...)` (sem o nome do parâmetro) para uma atividade.
-  buildVariables: (activityUrn: string) => string;
+  // Monta o `variables=(...)` (sem o nome do parâmetro) para uma URN-alvo. A URN pode ser
+  // o ugcPost INLINE (urn:li:ugcPost:<id>, preferido) ou, no fallback, o activity urn.
+  buildVariables: (urn: string) => string;
 };
 
 const PAGINACAO = "count:10,start:0";
