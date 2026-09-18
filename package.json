@@ -24,7 +24,7 @@
     "@types/bun": "^1.4.2",
     "@types/chrome": "^0.2.9",
     "husky": "^9.1.7",
-    "lint-staged": "^17.5.0",
+    "lint-staged": "^17.5.1",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2"
   },
