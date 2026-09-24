@@ -1,5 +1,7 @@
+import { getActiveFetchStrategy } from "../providers/active-fetch-registry";
 import type { BackgroundStore, EndpointStore, SocialProvider } from "../shared/domain";
 import type { RuntimeMessage } from "../shared/messages";
+import { runActiveFetch } from "./active-fetch-scheduler";
 import { createStore, handleRuntimeMessage } from "./controller";
 
 const LOCAL_KEYS = {
@@ -11,6 +13,38 @@ const LOCAL_KEYS = {
 const SESSION_KEY = "he4rt_platforms";
 
 const store = createStore();
+
+if (chrome.alarms) {
+  chrome.runtime.onInstalled.addListener(() => {
+    chrome.alarms.create("devto-afk", { periodInMinutes: 1440 });
+  });
+
+  chrome.alarms.onAlarm.addListener(async (alarm) => {
+    if (alarm.name !== "devto-afk") return;
+    const strategy = getActiveFetchStrategy("devto");
+    if (!strategy) return;
+    await hydration;
+    const result = await chrome.storage.local.get("devtoApiKey");
+    const apiKey = (result.devtoApiKey as string | undefined) ?? null;
+    await runActiveFetch({
+      strategy,
+      apiKey,
+      mode: "afk",
+      onCapture: (endpoint, payload, url) => {
+        handleRuntimeMessage(store, {
+          action: "CAPTURED_PAYLOAD",
+          provider: "devto",
+          endpoint,
+          payload,
+          url,
+          pageUrl: "https://dev.to",
+          timestamp: new Date().toISOString(),
+        });
+      },
+    });
+    persistSession();
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Hydration: load from both storage areas
@@ -43,6 +77,7 @@ async function hydrate() {
     if (s.x) Object.assign(store.platforms.x, s.x);
     if (s.instagram) Object.assign(store.platforms.instagram, s.instagram);
     if (s.linkedin) Object.assign(store.platforms.linkedin, s.linkedin);
+    if (s.devto) Object.assign(store.platforms.devto, s.devto);
   }
 
   store.lastUpdated = new Date().toISOString();
@@ -61,6 +96,7 @@ function persistSession(): Promise<void> {
     x: store.platforms.x,
     instagram: store.platforms.instagram,
     linkedin: store.platforms.linkedin,
+    devto: store.platforms.devto,
   };
   persistQueue = persistQueue
     .then(() => chrome.storage.session.set({ [SESSION_KEY]: snapshot }))
@@ -117,6 +153,55 @@ function notifyStoreUpdated() {
 // ---------------------------------------------------------------------------
 
 chrome.runtime.onMessage.addListener((request: RuntimeMessage, _sender, sendResponse) => {
+  if (request.action === "GET_DEVTO_API_KEY") {
+    chrome.storage.local.get("devtoApiKey").then((result) => {
+      sendResponse({ apiKey: (result.devtoApiKey as string | undefined) ?? null });
+    });
+    return true;
+  }
+
+  if (request.action === "SET_DEVTO_API_KEY") {
+    const { apiKey } = request;
+    const op = apiKey
+      ? chrome.storage.local.set({ devtoApiKey: apiKey })
+      : chrome.storage.local.remove("devtoApiKey");
+    op.then(() => sendResponse({ ok: true }));
+    return true;
+  }
+
+  if (request.action === "RUN_ACTIVE_FETCH" && request.provider === "devto") {
+    const provider = request.provider;
+    hydration
+      .then(() => chrome.storage.local.get("devtoApiKey"))
+      .then(async (result) => {
+        const apiKey = (result.devtoApiKey as string | undefined) ?? null;
+        const strategy = getActiveFetchStrategy(provider);
+        if (!strategy) {
+          sendResponse({ collected: 0, articles: 0, reactions: 0 });
+          return;
+        }
+        const status = await runActiveFetch({
+          strategy,
+          apiKey,
+          mode: "onDemand",
+          onCapture: (endpoint, payload, url) => {
+            handleRuntimeMessage(store, {
+              action: "CAPTURED_PAYLOAD",
+              provider,
+              endpoint,
+              payload,
+              url,
+              pageUrl: "https://dev.to",
+              timestamp: new Date().toISOString(),
+            });
+          },
+        });
+        persistSession();
+        sendResponse(status);
+      });
+    return true;
+  }
+
   hydration
     .then(() => {
       // handleRuntimeMessage pode devolver um valor síncrono OU uma Promise (ex.:

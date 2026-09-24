@@ -81,7 +81,7 @@ async function validateManifest() {
   assertIncludesAll(manifest.permissions, ["storage", "unlimitedStorage"], "permissions");
   assertIncludesAll(
     manifest.host_permissions,
-    ["https://x.com/*", "https://twitter.com/*", "https://www.instagram.com/*"],
+    ["https://x.com/*", "https://twitter.com/*", "https://www.instagram.com/*", "https://dev.to/*"],
     "host_permissions",
   );
 
@@ -106,6 +106,9 @@ async function validateManifest() {
       ["https://x.com/*", "https://twitter.com/*", "https://www.instagram.com/*"],
       `${script.js.join(",")} matches`,
     );
+    if (script.matches?.includes("https://dev.to/*")) {
+      fail(`${script.js.join(",")} não deve incluir dev.to nos matches (Background-only provider)`);
+    }
   }
 
   if (manifest.side_panel?.default_path !== "panel.html") {
