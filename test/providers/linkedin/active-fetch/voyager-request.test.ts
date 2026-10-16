@@ -71,6 +71,31 @@ describe("buildVoyagerRequest (replay autenticado por assinatura colhida)", () =
     );
   });
 
+  // O alvo carrega o ugcPost INLINE descoberto na busca (par real he4rt/ORG:
+  // activity 7457926735343390720 → ugcPost 7457926687662456833). O replay deve aprofundar
+  // pelo ugcPost (o activity dava 200-vazio em posts de organização), mantendo o shape
+  // encodado (threadUrn percent-encodado). Sem ugcPost no alvo → fallback ao activity.
+  const TARGET_COM_UGC = {
+    id: "urn:li:activity:7457926735343390720",
+    activityUrn: "urn:li:activity:7457926735343390720",
+    ugcPostUrn: "urn:li:ugcPost:7457926687662456833",
+  };
+
+  // searchParams.get DECODA a URN de volta (o parser usa o mesmo caminho), então as
+  // asserts são na forma decodada — espelham os testes de activity acima.
+  test("alvo com ugcPost → variables usa o ugcPost (não o activity)", () => {
+    const req = buildVoyagerRequest(TARGET_COM_UGC, "socialDashReactions", fullCalibration());
+    const vars = urlOf(req).searchParams.get("variables") || "";
+    expect(vars).toContain("threadUrn:urn:li:ugcPost:7457926687662456833");
+    expect(vars).not.toContain("activity"); // não aprofunda mais pelo activity
+  });
+
+  test("alvo sem ugcPost → fallback ao activity urn (comportamento legado)", () => {
+    const req = buildVoyagerRequest(TARGET, "socialDashReactions", fullCalibration());
+    const vars = urlOf(req).searchParams.get("variables") || "";
+    expect(vars).toContain("threadUrn:urn:li:activity:111");
+  });
+
   test("auth: credentials include + headers de replay do Voyager", () => {
     const req = buildVoyagerRequest(TARGET, "socialDashReactions", fullCalibration());
     expect(req?.credentials).toBe("include");
