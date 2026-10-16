@@ -13,6 +13,19 @@ export type BackgroundProviderFacet = {
   // Modos de Scope (#9) declarados pelo provider — usados pela detecção de Collection
   // Target (DETECT_TARGET/detectFromPage) e pelo filtro por modo. Ver ScopeMode abaixo.
   scopeModes: ScopeMode[];
+
+  // Dispatch hooks — métodos opcionais que cada provider implementa para desacoplar
+  // lógica específica do controller genérico. Se não implementado, o controller usa
+  // fallback inline (comportamento preservado).
+  buildPlatformData?(store: BackgroundStore): unknown;
+  computePopupSummary?(store: BackgroundStore): {
+    content_count: number;
+    engager_count: number;
+  };
+  restoreVisibleData?(store: BackgroundStore, saved: unknown): void;
+  reprocessVisibleComments?(store: BackgroundStore, saved: unknown): void;
+  buildExportPlatformData?(store: BackgroundStore): unknown;
+  computeExportSummary?(store: BackgroundStore): unknown;
 };
 
 // Seam de Scope (#9): torna o modo de coleta DECLARÁVEL por provider sem mover ainda
