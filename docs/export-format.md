@@ -37,11 +37,11 @@ This document describes the JSON structure returned by `GET_EXPORT`.
 }
 ```
 
-| Field | Type | Description |
-|---|---|---|
-| `exported_at` | string | ISO 8601 timestamp of export |
-| `handles` | object | Tracked handles per platform |
-| `profiles` | object | Tracked account profiles, keyed by platform |
+| Field         | Type   | Description                                 |
+| ------------- | ------ | ------------------------------------------- |
+| `exported_at` | string | ISO 8601 timestamp of export                |
+| `handles`     | object | Tracked handles per platform                |
+| `profiles`    | object | Tracked account profiles, keyed by platform |
 
 ---
 
@@ -279,14 +279,14 @@ Same `ExportComment` structure as Instagram, with additional optional fields:
 
 Computed from captured interaction data:
 
-| Field | Description |
-|---|---|
-| `real_comments` | Count of depth-0 (top-level) comments |
-| `replies` | Count of all nested replies |
-| `unique_commenters_count` | Unique commenter URNs |
-| `unique_reacters_count` | Unique reactor URNs (post + comment reactions) |
-| `unique_engagers_count` | Unique URNs across all interaction types |
-| `audience_interactions` | `unique_engagers_count` minus tracked account URN |
+| Field                     | Description                                       |
+| ------------------------- | ------------------------------------------------- |
+| `real_comments`           | Count of depth-0 (top-level) comments             |
+| `replies`                 | Count of all nested replies                       |
+| `unique_commenters_count` | Unique commenter URNs                             |
+| `unique_reacters_count`   | Unique reactor URNs (post + comment reactions)    |
+| `unique_engagers_count`   | Unique URNs across all interaction types          |
+| `audience_interactions`   | `unique_engagers_count` minus tracked account URN |
 
 ---
 

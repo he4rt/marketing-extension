@@ -24,11 +24,11 @@ app já carrega, e consolida tudo num JSON limpo pronto para o banco.
 
 ## Plataformas suportadas
 
-| Rede | Status | O que captura |
-| --- | --- | --- |
-| **X / Twitter** | ✅ Validado | Tweets do perfil, métricas, replies da comunidade, curtidores |
-| **Instagram** | ✅ Validado | Publicações, métricas, comentários (árvore) e curtidores |
-| **LinkedIn** | 🚧 Em estabilização | Posts, reações (com breakdown), reposts, comentários e métricas de engajamento |
+| Rede            | Status              | O que captura                                                                  |
+| --------------- | ------------------- | ------------------------------------------------------------------------------ |
+| **X / Twitter** | ✅ Validado         | Tweets do perfil, métricas, replies da comunidade, curtidores                  |
+| **Instagram**   | ✅ Validado         | Publicações, métricas, comentários (árvore) e curtidores                       |
+| **LinkedIn**    | 🚧 Em estabilização | Posts, reações (com breakdown), reposts, comentários e métricas de engajamento |
 
 > O processamento e o export do LinkedIn estão prontos e cobertos por testes; a camada de
 > captura no browser está sendo estabilizada.
@@ -90,13 +90,18 @@ Clique em **Exportar JSON** para baixar o arquivo estruturado (schema v3):
     "profiles": { "x": { "...": "..." } }
   },
   "per_platform": {
-    "x":         { "content": [ "...tweets..." ], "engagers": { "likes_by_tweet": {}, "replies": [] } },
-    "instagram": { "content": [ "...posts com engagers.likes/comments..." ] },
-    "linkedin":  { "content": [ "...posts com reactions/reposts/comments + engagement_metrics..." ] }
+    "x": { "content": ["...tweets..."], "engagers": { "likes_by_tweet": {}, "replies": [] } },
+    "instagram": { "content": ["...posts com engagers.likes/comments..."] },
+    "linkedin": { "content": ["...posts com reactions/reposts/comments + engagement_metrics..."] }
   },
   "unified": {
     "summary": {
-      "all": { "total_content": 15, "total_likes": 500, "total_comments": 30, "unique_engagers": 42 },
+      "all": {
+        "total_content": 15,
+        "total_likes": 500,
+        "total_comments": 30,
+        "unique_engagers": 42
+      },
       "by_platform": { "x": { "...": "..." }, "instagram": { "...": "..." } }
     }
   }
@@ -139,7 +144,7 @@ bun run validate       # Biome + valida Manifest V3 + smoke test
 bun run format         # formata o código
 ```
 
-> O export v3 é um **contrato externo**: a suíte tem um *golden-master* que falha se o
+> O export v3 é um **contrato externo**: a suíte tem um _golden-master_ que falha se o
 > formato regredir. Não atualize os snapshots para "consertar" um teste vermelho — conserte
 > o código. O pipeline completo de teste no Chrome está em
 > [`docs/chrome-pipeline-teste.md`](docs/chrome-pipeline-teste.md).
