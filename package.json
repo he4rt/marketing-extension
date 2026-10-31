@@ -12,24 +12,26 @@
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "validate": "bun run scripts/validate-extension.ts",
-    "prepare": "husky"
+    "prepare": "husky",
+    "outdated": "npm-check-updates"
   },
   "lint-staged": {
     "*.{ts,js,json}": "biome check --write --no-errors-on-unmatched",
     "*.{ts,js,json,css,html}": "biome format --write --no-errors-on-unmatched"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.6.2",
-    "@tailwindcss/cli": "^4.3.3",
-    "@types/bun": "^1.4.3",
-    "@types/chrome": "^0.3.6",
-    "husky": "^9.1.7",
-    "lint-staged": "^17.6.0",
-    "tailwindcss": "^4.3.3",
-    "typescript": "^7.0.2"
+    "@biomejs/biome": "2.6.4",
+    "@tailwindcss/cli": "4.3.3",
+    "@types/bun": "1.4.4",
+    "@types/chrome": "0.3.7",
+    "husky": "9.1.7",
+    "lint-staged": "17.6.0",
+    "npm-check-updates": "23.1.1",
+    "tailwindcss": "4.3.3",
+    "typescript": "7.0.2"
   },
   "dependencies": {
-    "@preact/signals": "^2.11.3",
-    "preact": "^11.0.1"
+    "@preact/signals": "2.11.4",
+    "preact": "11.1.0"
   }
 }

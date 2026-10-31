@@ -26,7 +26,7 @@ export function LinkedInDetail({ post }: { post: LinkedInPanelPost }) {
   const breakdown = Object.entries(post.metrics.reaction_breakdown || {})
     .filter(([, n]) => n > 0)
     .sort(([, a], [, b]) => b - a);
-  const maxCount = breakdown.reduce((max, [, n]) => (n > max ? n : max), 0);
+  const maxCount = breakdown.reduce((max, [, n]) => Math.max(n, max), 0);
   const noCaptured = reactions.captured === 0 && reposts.captured === 0 && comments.captured === 0;
   const openOnNetwork = () =>
     chrome.tabs.create({ url: `https://www.linkedin.com/feed/update/${post.activity_urn}/` });

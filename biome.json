@@ -1,7 +1,18 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.4.16/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.6.4/schema.json",
   "files": {
-    "includes": ["**", "!dist", "!node_modules", "!*.zip", "!docs/**/*.html"]
+    "includes": [
+      "**",
+      "!dist",
+      "!node_modules",
+      "!*.zip",
+      "!docs/**/*.html",
+      "!CLAUDE.md",
+      "!CONTEXT.md",
+      "!docs/adr",
+      "!docs/specs",
+      "!docs/agents"
+    ]
   },
   "formatter": {
     "enabled": true,
@@ -12,7 +23,7 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": true,
+      "preset": "recommended",
       "complexity": {
         "noImportantStyles": "off"
       },
