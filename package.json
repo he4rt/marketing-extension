@@ -32,6 +32,6 @@
   },
   "dependencies": {
     "@preact/signals": "2.11.4",
-    "preact": "11.1.0"
+    "preact": "11.1.1"
   }
 }
