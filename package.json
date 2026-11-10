@@ -27,7 +27,7 @@
     "husky": "9.1.7",
     "lint-staged": "17.6.0",
     "npm-check-updates": "23.1.1",
-    "tailwindcss": "4.3.3",
+    "tailwindcss": "4.3.4",
     "typescript": "7.0.2"
   },
   "dependencies": {
