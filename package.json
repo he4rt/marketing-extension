@@ -21,7 +21,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.4",
-    "@tailwindcss/cli": "4.3.3",
+    "@tailwindcss/cli": "4.3.5",
     "@types/bun": "1.4.4",
     "@types/chrome": "0.3.7",
     "husky": "9.1.7",
