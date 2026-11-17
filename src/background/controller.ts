@@ -15,10 +15,12 @@ import {
 } from "../providers/linkedin";
 import { getCalibration, isCalibrated } from "../providers/linkedin/active-fetch/calibration";
 import { linkedinActiveFetchFacet } from "../providers/linkedin/active-fetch/facet";
+import { devtoProvider } from "../providers/devto";
 import { publicationKey } from "../providers/shared/utils";
 import { buildPlatformDataX, computeSummaryX, xProvider } from "../providers/x";
 import type {
   BackgroundStore,
+  DevToStore,
   ExportJSON,
   ExportV3Meta,
   InstagramStore,
@@ -84,6 +86,17 @@ function emptyLinkedInStore(): LinkedInStore {
   };
 }
 
+function emptyDevToStore(): DevToStore {
+  return {
+    publications: {},
+    commentsByPublication: {},
+    engagementsByPublication: {},
+    extra: {
+      analytics: {},
+    },
+  };
+}
+
 export function createStore(trackedHandle = ""): BackgroundStore {
   return {
     activeProvider: null,
@@ -94,6 +107,7 @@ export function createStore(trackedHandle = ""): BackgroundStore {
       x: emptyXStore(),
       instagram: emptyInstagramStore(),
       linkedin: emptyLinkedInStore(),
+      devto: emptyDevToStore(),
     },
     lastUpdated: null,
     nextCaptureOrder: 1,
@@ -153,6 +167,7 @@ const BACKGROUND_PROVIDERS: Record<SocialProvider, BackgroundProviderFacet> = {
   x: xProvider,
   instagram: instagramProvider,
   linkedin: linkedinProvider,
+  devto: devtoProvider,
 };
 
 // Registro PARALELO a BACKGROUND_PROVIDERS para o caminho ATIVO (Active Fetch / L3).
@@ -200,6 +215,7 @@ function clearNormalizedData(store: BackgroundStore) {
   const linkedinAccountInfo = store.platforms.linkedin.extra.accountInfo;
   store.platforms.linkedin = emptyLinkedInStore();
   store.platforms.linkedin.extra.accountInfo = linkedinAccountInfo;
+  store.platforms.devto = emptyDevToStore();
 
   store.trackedProfiles = {};
   store.provenance = {};

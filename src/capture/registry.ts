@@ -29,6 +29,10 @@ export const CAPTURE_FACETS: Record<SocialProvider, CaptureFacet> = {
     ssrScriptScan: instagramSsrScriptScan,
     liveDomScrapes: [instagramVisiblePublicationsScrape, instagramVisibleCommentsScrape],
   },
+  // Background-only provider: sem estratégias de captura passiva.
+  devto: {
+    id: "devto",
+  },
 };
 
 export function captureFacetForHost(hostname: string): CaptureFacet | null {
