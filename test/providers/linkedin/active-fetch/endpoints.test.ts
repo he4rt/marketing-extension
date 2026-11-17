@@ -52,4 +52,18 @@ describe("endpoints (descritores Voyager L3)", () => {
     const vars = endpointDescriptor("feedDashReshareFeed")?.buildVariables("urn:li:activity:111");
     expect(vars).toBe(`(count:10,start:0,targetUrn:${ENC})`);
   });
+
+  // buildVariables é urn-agnóstico: aceita tanto o activity urn quanto o ugcPost INLINE
+  // (urn:li:ugcPost:<id>) descoberto na busca. O Active Fetch passa o ugcPost quando o
+  // alvo o carrega — par real he4rt/ORG: ugcPost 7457926687662456833.
+  test("buildVariables aceita o ugcPost urn e o encoda no mesmo shape", () => {
+    const ugc = "urn:li:ugcPost:7457926687662456833";
+    const encUgc = encodeURIComponent(ugc);
+    expect(endpointDescriptor("socialDashReactions")?.buildVariables(ugc)).toBe(
+      `(count:10,start:0,threadUrn:${encUgc})`,
+    );
+    expect(endpointDescriptor("socialDashComments")?.buildVariables(ugc)).toBe(
+      `(count:10,start:0,socialDetailUrn:${encUgc},sortOrder:RELEVANCE)`,
+    );
+  });
 });
