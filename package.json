@@ -25,7 +25,7 @@
     "@types/bun": "1.4.4",
     "@types/chrome": "0.3.7",
     "husky": "9.1.7",
-    "lint-staged": "17.6.0",
+    "lint-staged": "17.6.1",
     "npm-check-updates": "23.1.1",
     "tailwindcss": "4.3.5",
     "typescript": "7.0.2"
